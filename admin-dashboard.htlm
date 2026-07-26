@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard - MeowChanO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Space+Mono:wght@400;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* --- CSS GỐC --- */
+  :root{
+    --paper:#EFE8D8; --paper-deep:#E4DBC6; --ink:#2E2A24;
+    --card:#FFFCF5; --pink:#F3A8B7; --pink-deep:#E88BA0;
+    --stamp:#C1443E; --line:#B8A88C; --available:#748C67;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--paper);
+    background-image: radial-gradient(circle at 1px 1px, rgba(46,42,36,0.05) 1px, transparent 0);
+    background-size: 22px 22px; color:var(--ink); font-family:'Nunito', sans-serif;
+  }
+  .mono{ font-family:'Space Mono', monospace; }
+  .hidden{ display:none !important; }
+
+  header{ padding: 20px 20px 10px; text-align:center; position:relative; }
+  .badge{
+    display:inline-flex; align-items:center; gap:10px; background:var(--ink); color:var(--paper);
+    padding: 8px 22px; border-radius: 999px; font-family:'Caveat', cursive; font-weight:700; font-size:28px;
+    box-shadow: 3px 3px 0 var(--pink-deep);
+  }
+  .badge .paws{ display:inline-flex; align-items:center; gap:2px; transform: translateY(1px); }
+  .badge .paws svg{ width:16px; height:16px; }
+  .badge .paws svg:first-child{ transform: rotate(-8deg); }
+  .badge .paws svg:last-child{ transform: rotate(8deg) translateY(3px); }
+  .perforation{ max-width: 1040px; margin: 15px auto 0; border-top: 2px dashed var(--line); position: relative; }
+
+  /* --- GIAO DIỆN DANH SÁCH --- */
+  #list-section { max-width:1040px; margin: 20px auto; padding: 0 20px; }
+  .top-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; }
+  .top-bar h2 { font-family:'Caveat', cursive; font-size:32px; margin:0; }
+  .btn-add-new {
+    background: var(--pink-deep); color: #fff; border: 2px solid var(--ink); padding: 10px 20px;
+    border-radius: 8px; font-family: 'Space Mono', monospace; font-weight: 700; cursor: pointer;
+    box-shadow: 3px 3px 0 var(--ink); transition: transform 0.1s;
+  }
+  .btn-add-new:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+
+  .empty-state{
+    text-align:center; padding:50px 20px; font-family:'Space Mono', monospace; color:#8a8071;
+    border:2px dashed var(--line); border-radius:14px; background:rgba(255,252,245,0.4);
+  }
+
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:22px; }
+
+  /* Card hiển thị mèo */
+  .cat-card{
+    background:var(--card); border:2px solid var(--ink); border-radius:14px;
+    padding: 14px; position:relative; box-shadow: 4px 4px 0px rgba(46,42,36,0.1);
+  }
+  .photo-wrap{ position:relative; border-radius:8px; overflow:hidden; border: 2px dashed var(--line); padding:6px; background:#fff; }
+  .photo-wrap img{ width:100%; aspect-ratio:1/1; object-fit:cover; display:block; border-radius:4px; }
+  .cat-body{ padding-top:10px; }
+  .cat-body .name{ font-family:'Caveat', cursive; font-size:24px; font-weight:700; line-height:1; }
+  .status-pill{
+    display:inline-block; font-family:'Space Mono', monospace; font-size:10px; font-weight:700;
+    padding:3px 9px; border-radius:999px; margin-top:6px; letter-spacing:.02em;
+  }
+  .status-pill.available{ background: rgba(116,140,103,0.16); color: var(--available); border:1px solid var(--available); }
+  .status-pill.sold{ background: rgba(193,68,62,0.12); color: var(--stamp); border:1px solid var(--stamp); }
+
+  /* Nút thao tác Admin trên Card */
+  .admin-actions { display:flex; gap:8px; margin-top:12px; padding-top:12px; border-top:1px dotted var(--line); }
+  .admin-actions button {
+    flex:1; padding:6px; border:2px solid var(--ink); border-radius:6px;
+    font-family:'Space Mono', monospace; font-size:12px; font-weight:700; cursor:pointer; transition: transform 0.1s;
+  }
+  .admin-actions button:active{ transform: translate(1px,1px); }
+  .btn-edit { background:#e9e2d0; color:var(--ink); }
+  .btn-edit:hover { background:#d4ccb8; }
+  .btn-delete { background:var(--stamp); color:#fff; }
+  .btn-delete:hover { background:#a33630; }
+
+  /* --- GIAO DIỆN FORM (CHIA 2 CỘT) --- */
+  #form-section { max-width: 1040px; margin: 30px auto; padding: 0 20px; display: flex; gap: 40px; }
+  .preview-col { flex: 1; display: flex; flex-direction: column; align-items: center; }
+  .form-col { flex: 1.5; background: var(--card); border: 2.5px solid var(--ink); border-radius: 16px; padding: 25px 30px; box-shadow: 6px 6px 0 var(--pink-deep); position: relative;}
+
+  .btn-back { margin-bottom: 20px; font-family: 'Space Mono', monospace; font-size: 13px; background: none; border: none; cursor: pointer; color: #6b6255; text-decoration: underline; }
+  .form-header { font-family: 'Caveat', cursive; font-size: 32px; font-weight: 700; border-bottom: 2px dashed var(--line); padding-bottom: 15px; margin-bottom: 20px; margin-top: 0; }
+
+  .form-group { margin-bottom: 15px; }
+  .form-row { display: flex; gap: 15px; }
+  .form-row .form-group { flex: 1; }
+  label { display: block; font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; margin-bottom: 6px; color: #6b6255; text-transform: uppercase; }
+  .field-error { display:none; color: var(--stamp); font-family:'Space Mono', monospace; font-size:11px; margin-top:5px; }
+  .form-group.invalid input, .form-group.invalid select, .form-group.invalid textarea{ border-color: var(--stamp); }
+  .form-group.invalid .field-error{ display:block; }
+  input, select, textarea { width: 100%; padding: 10px 14px; border: 2px solid var(--ink); border-radius: 8px; font-size: 14px; font-family: 'Nunito', sans-serif; background: #fff; color: var(--ink); }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--pink-deep); outline-offset: 1px; }
+
+  /* Ô TẢI ẢNH */
+  .upload-zone{
+    border: 2.5px dashed var(--line); border-radius: 12px; background:#fff;
+    padding: 18px; text-align:center; cursor:pointer; position: relative; transition: border-color .15s, background .15s;
+  }
+  .upload-zone:hover, .upload-zone.dragover{ border-color: var(--pink-deep); background: #fff8f9; }
+  .upload-zone input[type="file"]{ display:none; }
+  .upload-zone .upload-icon{ font-size: 26px; line-height:1; margin-bottom:6px; }
+  .upload-zone .upload-text{ font-family:'Space Mono', monospace; font-size:12px; color:#6b6255; }
+  .upload-zone .upload-text b{ color: var(--pink-deep); }
+  .upload-zone .upload-hint{ font-family:'Space Mono', monospace; font-size:10px; color:#a39a89; margin-top:4px; }
+  .upload-preview{ position:relative; }
+  .upload-preview img{ width:100%; max-height:160px; object-fit:cover; border-radius:8px; display:block; }
+  .upload-preview .btn-remove-img{
+    position:absolute; top:8px; right:8px; background: var(--ink); color:#fff; border:none; border-radius:999px;
+    width:26px; height:26px; font-family:'Space Mono', monospace; font-weight:700; cursor:pointer; line-height:1;
+  }
+
+  .btn-submit { width: 100%; padding: 14px; margin-top: 10px; background: var(--ink); color: var(--paper); border: none; border-radius: 10px; font-family: 'Space Mono', monospace; font-size: 16px; font-weight: 700; cursor: pointer; box-shadow: 4px 4px 0 var(--pink-deep); transition: transform .1s; }
+  .btn-submit:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--pink-deep); }
+  .btn-submit:disabled{ opacity:.55; cursor:not-allowed; }
+
+  .modal-overlay{
+    position: fixed; inset: 0; background: rgba(46,42,36,0.45);
+    display:flex; align-items:center; justify-content:center; z-index: 100; padding: 20px;
+  }
+  .modal-card{
+    background: var(--card); border: 2.5px solid var(--ink); border-radius: 16px;
+    padding: 26px 26px 20px; max-width: 340px; width:100%; text-align:center;
+    box-shadow: 6px 6px 0 var(--pink-deep);
+  }
+  .modal-card .modal-icon{ font-size: 30px; margin-bottom: 8px; }
+  .modal-card p{ font-family:'Nunito', sans-serif; font-size:15px; margin: 0 0 20px; color: var(--ink); }
+  .modal-actions{ display:flex; gap:10px; }
+  .modal-actions button{
+    flex:1; padding:10px; border:2px solid var(--ink); border-radius:8px;
+    font-family:'Space Mono', monospace; font-weight:700; font-size:13px; cursor:pointer;
+  }
+  .modal-btn-cancel{ background:#e9e2d0; color:var(--ink); }
+  .modal-btn-cancel:hover{ background:#d4ccb8; }
+  .modal-btn-confirm{ background:var(--stamp); color:#fff; }
+  .modal-btn-confirm:hover{ background:#a33630; }
+
+  .toast{
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: var(--paper); font-family:'Space Mono', monospace; font-size:13px;
+    padding: 12px 22px; border-radius: 999px; box-shadow: 3px 3px 0 var(--pink-deep);
+    opacity:0; pointer-events:none; transition: opacity .2s, transform .2s; z-index: 50;
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+
+  /* Tem nhãn (Dùng lại của index) */
+  .tape{ position:absolute; width:46px; height:18px; background: rgba(243,168,183,0.55); border: 1px solid rgba(46,42,36,0.15); top:-8px; left: 50%; transform: translateX(-50%) rotate(-3deg); z-index: 2;}
+  .stamp{ position:absolute; top:-14px; right:-10px; width:58px; height:58px; border-radius:50%; border: 2.5px solid var(--stamp); color:var(--stamp); display:flex; align-items:center; justify-content:center; text-align:center; transform: rotate(-10deg); font-family:'Space Mono', monospace; font-weight:700; font-size:10.5px; line-height:1.15; background: rgba(255,252,245,0.9); z-index: 2;}
+  .stamp::before{ content:''; position:absolute; inset:4px; border:1px solid var(--stamp); border-radius:50%; }
+
+  @media (max-width: 760px){
+    #form-section{ flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge">
+    Admin Desk
+    <span class="paws">
+      <svg viewBox="0 0 24 24" fill="var(--pink)"><path d="M12 15.2c-2.6 0-5.6 1.9-5.6 4.4 0 1.3 1 2.2 2.3 2.2.9 0 1.6-.4 2.4-.7.4-.2.9-.4 1.4-.4s1 .2 1.4.4c.8.3 1.5.7 2.4.7 1.3 0 2.3-.9 2.3-2.2 0-2.5-3-4.4-6.6-4.4z"/><circle cx="5.2" cy="13.4" r="2.1"/><circle cx="9.3" cy="8.6" r="2.1"/><circle cx="14.7" cy="8.6" r="2.1"/><circle cx="18.8" cy="13.4" r="2.1"/></svg>
+      <svg viewBox="0 0 24 24" fill="var(--pink)"><path d="M12 15.2c-2.6 0-5.6 1.9-5.6 4.4 0 1.3 1 2.2 2.3 2.2.9 0 1.6-.4 2.4-.7.4-.2.9-.4 1.4-.4s1 .2 1.4.4c.8.3 1.5.7 2.4.7 1.3 0 2.3-.9 2.3-2.2 0-2.5-3-4.4-6.6-4.4z"/><circle cx="5.2" cy="13.4" r="2.1"/><circle cx="9.3" cy="8.6" r="2.1"/><circle cx="14.7" cy="8.6" r="2.1"/><circle cx="18.8" cy="13.4" r="2.1"/></svg>
+    </span>
+  </div>
+  <div class="perforation"></div>
+</header>
+
+<!-- PHẦN 1: DANH SÁCH HỒ SƠ -->
+<div id="list-section">
+  <div class="top-bar">
+    <h2>Kho Hồ Sơ Mèo</h2>
+    <button class="btn-add-new" onclick="openForm()">+ THÊM MÈO MỚI</button>
+  </div>
+  <div class="grid" id="admin-grid">
+    <!-- Dữ liệu sẽ được JS render vào đây -->
+  </div>
+</div>
+
+<!-- PHẦN 2: FORM THÊM / SỬA -->
+<div id="form-section" class="hidden">
+
+  <!-- BẢN XEM TRƯỚC -->
+  <div class="preview-col">
+    <div style="font-family: 'Space Mono', monospace; font-size: 12px; color: #7a7263; margin-bottom:15px; text-transform: uppercase;">Bản xem trước</div>
+    <div class="cat-card" style="width: 100%; max-width: 320px; transform: rotate(-1deg);">
+      <div class="photo-wrap">
+        <div class="tape"></div>
+        <img id="prev-img" src="https://images.unsplash.com/photo-1573865526739-10659fec78a5?q=80&w=400&auto=format&fit=crop">
+      </div>
+      <div class="stamp" id="prev-price">0k<br>đ</div>
+      <div class="cat-body">
+        <div class="name" id="prev-name">Tên bé mèo...</div>
+        <div style="display:flex; justify-content:space-between; font-family:'Space Mono'; font-size:11px; border-bottom:1px dotted var(--line); padding:3px 0;"><span>Giống</span><span id="prev-breed">—</span></div>
+        <div style="display:flex; justify-content:space-between; font-family:'Space Mono'; font-size:11px; border-bottom:1px dotted var(--line); padding:3px 0;"><span>Tuổi</span><span id="prev-age">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FORM NHẬP -->
+  <div class="form-col">
+    <button class="btn-back" onclick="closeForm()">← Quay lại danh sách</button>
+    <h2 class="form-header" id="form-title">Tạo Hồ Sơ Mới</h2>
+
+    <div class="form-group" id="grp-image">
+      <label>1. Ảnh mèo</label>
+      <div class="upload-zone" id="upload-zone" onclick="triggerFileInput(event)">
+        <input type="file" id="inp-image-file" accept="image/*" onchange="handleFileSelect(event)">
+        <div id="upload-placeholder">
+          <div class="upload-icon">📷</div>
+          <div class="upload-text"><b>Nhấn để chọn ảnh</b> hoặc kéo thả vào đây</div>
+          <div class="upload-hint">JPG, PNG · tối đa 5MB</div>
+        </div>
+        <div id="upload-preview" class="upload-preview hidden">
+          <img id="upload-preview-img" src="">
+          <button type="button" class="btn-remove-img" onclick="removeImage(event)">✕</button>
+        </div>
+      </div>
+      <div class="field-error">Vui lòng chọn một ảnh cho bé mèo.</div>
+    </div>
+
+    <div class="form-group" id="grp-name">
+      <label>2. Tên bé mèo</label>
+      <input type="text" id="inp-name" placeholder="VD: Bánh Bao" oninput="updatePreview()">
+      <div class="field-error">Vui lòng nhập tên bé mèo.</div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>3. Giống mèo</label>
+        <input type="text" id="inp-breed" placeholder="VD: Anh Lông Ngắn" oninput="updatePreview()">
+      </div>
+      <div class="form-group">
+        <label>4. Giới tính</label>
+        <select id="inp-gender">
+          <option value="Đực">Đực</option>
+          <option value="Cái">Cái</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group" id="grp-price">
+        <label>5. Giá bán (VNĐ)</label>
+        <input type="number" id="inp-price" placeholder="VD: 4500000" min="0" oninput="updatePreview()">
+        <div class="field-error">Giá bán phải lớn hơn 0.</div>
+      </div>
+      <div class="form-group" id="grp-age">
+        <label>6. Tuổi (Tháng)</label>
+        <input type="number" id="inp-age" placeholder="VD: 3" min="0" oninput="updatePreview()">
+        <div class="field-error">Tuổi không được để trống.</div>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>7. Trạng thái</label>
+        <select id="inp-status">
+          <option value="available">Còn bán</option>
+          <option value="sold">Đã bán</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>8. Mô tả chi tiết</label>
+      <textarea id="inp-desc" rows="3" placeholder="Nhập mô tả vào đây..."></textarea>
+    </div>
+
+    <button class="btn-submit" onclick="saveCat()" id="btn-save">LƯU HỒ SƠ</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay hidden" id="delete-modal" onclick="if(event.target===this) cancelDelete()">
+  <div class="modal-card">
+    <div class="modal-icon">🐾</div>
+    <p>Bạn có chắc chắn muốn <b>XÓA</b> hồ sơ bé mèo này không?</p>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="cancelDelete()">HỦY</button>
+      <button class="modal-btn-confirm" onclick="confirmDelete()">XÓA</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- DỮ LIỆU GIẢ ---
+let adminData = [
+  { id: "1", name: "Mochi Trắng", breed: "Anh Lông Ngắn", gender: "Cái", age_months: 2, price: 4500000, status: "available", description: "Bé form người mập mạp.", image_url: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=400&auto=format&fit=crop" },
+  { id: "2", name: "Bánh Bao", breed: "Munchkin", gender: "Đực", age_months: 3, price: 8500000, status: "available", description: "Chân siêu lùn.", image_url: "https://images.unsplash.com/photo-1513360371669-4adf3dd7dff8?q=80&w=400&auto=format&fit=crop" }
+];
+
+let editingId = null;   // null = đang thêm mới, có giá trị = đang sửa
+let currentImage = "";  // ảnh hiện tại trong form (dataURL hoặc link cũ)
+const MAX_IMAGE_MB = 5;
+
+// 1. Hiển thị danh sách mèo
+function renderAdminGrid() {
+  const grid = document.getElementById('admin-grid');
+
+  if (adminData.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;">Chưa có hồ sơ mèo nào. Nhấn "+ THÊM MÈO MỚI" để bắt đầu.</div>`;
+    return;
+  }
+
+  grid.innerHTML = adminData.map(c => `
+    <div class="cat-card">
+      <div class="photo-wrap">
+        <div class="tape"></div>
+        <img src="${c.image_url}" alt="${escapeHtml(c.name)}">
+      </div>
+      <div class="cat-body">
+        <div class="name">${escapeHtml(c.name)}</div>
+        <div style="font-family:'Space Mono'; font-size:12px; color:#7a7263; margin-top:5px;">
+          Giá: ${(Number(c.price)/1000).toLocaleString('vi-VN')}k
+        </div>
+        <span class="status-pill ${c.status}">${c.status === 'sold' ? 'ĐÃ BÁN' : 'CÒN BÁN'}</span>
+        <div class="admin-actions">
+          <button class="btn-edit" onclick="openForm('${c.id}')">SỬA</button>
+          <button class="btn-delete" onclick="deleteCat('${c.id}')">XÓA</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// 2. Chức năng XÓA (dùng modal riêng thay cho confirm() của trình duyệt,
+//    vì confirm()/alert() có thể bị một số webview/trình duyệt chặn im lặng)
+let pendingDeleteId = null;
+
+function deleteCat(id) {
+  pendingDeleteId = id;
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+
+function cancelDelete() {
+  pendingDeleteId = null;
+  document.getElementById('delete-modal').classList.add('hidden');
+}
+
+function confirmDelete() {
+  if (pendingDeleteId !== null) {
+    adminData = adminData.filter(c => c.id !== pendingDeleteId);
+    renderAdminGrid();
+    showToast("Đã xóa hồ sơ.");
+  }
+  cancelDelete();
+}
+
+// 3. Mở Form (Dùng chung cho cả Thêm và Sửa)
+function openForm(id = null) {
+  editingId = id;
+  clearValidation();
+
+  if (editingId) {
+    const cat = adminData.find(c => c.id === id);
+    document.getElementById('form-title').textContent = "Chỉnh Sửa Hồ Sơ";
+    document.getElementById('btn-save').textContent = "CẬP NHẬT THAY ĐỔI";
+
+    currentImage = cat.image_url;
+    document.getElementById('inp-name').value = cat.name;
+    document.getElementById('inp-breed').value = cat.breed;
+    document.getElementById('inp-gender').value = cat.gender;
+    document.getElementById('inp-price').value = cat.price;
+    document.getElementById('inp-age').value = cat.age_months;
+    document.getElementById('inp-status').value = cat.status;
+    document.getElementById('inp-desc').value = cat.description;
+  } else {
+    document.getElementById('form-title').textContent = "Tạo Hồ Sơ Mới";
+    document.getElementById('btn-save').textContent = "LƯU HỒ SƠ & ĐĂNG";
+    document.querySelectorAll('#form-section input, #form-section textarea').forEach(inp => inp.value = '');
+    document.getElementById('inp-status').value = 'available';
+    currentImage = "";
+  }
+
+  document.getElementById('inp-image-file').value = "";
+  updateUploadZone();
+  document.getElementById('list-section').classList.add('hidden');
+  document.getElementById('form-section').classList.remove('hidden');
+  updatePreview();
+}
+
+// 4. Đóng form quay lại danh sách
+function closeForm() {
+  document.getElementById('list-section').classList.remove('hidden');
+  document.getElementById('form-section').classList.add('hidden');
+}
+
+// 5. TẢI ẢNH LÊN (thay cho nhập link)
+function triggerFileInput(e) {
+  // Nếu bấm vào nút xóa ảnh thì không mở lại hộp thoại chọn file
+  if (e.target.closest('.btn-remove-img')) return;
+  document.getElementById('inp-image-file').click();
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files && e.target.files[0];
+  if (file) processImageFile(file);
+}
+
+function processImageFile(file) {
+  if (!file.type.startsWith('image/')) {
+    showToast("Vui lòng chọn một file ảnh (JPG, PNG...).");
+    return;
+  }
+  if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
+    showToast(`Ảnh vượt quá ${MAX_IMAGE_MB}MB, vui lòng chọn ảnh nhỏ hơn.`);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    currentImage = ev.target.result; // base64 dataURL
+    updateUploadZone();
+    updatePreview();
+    setFieldValid('grp-image');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeImage(e) {
+  e.stopPropagation();
+  currentImage = "";
+  document.getElementById('inp-image-file').value = "";
+  updateUploadZone();
+  updatePreview();
+}
+
+function updateUploadZone() {
+  const placeholder = document.getElementById('upload-placeholder');
+  const preview = document.getElementById('upload-preview');
+  if (currentImage) {
+    placeholder.classList.add('hidden');
+    preview.classList.remove('hidden');
+    document.getElementById('upload-preview-img').src = currentImage;
+  } else {
+    placeholder.classList.remove('hidden');
+    preview.classList.add('hidden');
+  }
+}
+
+// Kéo & thả ảnh vào ô tải lên
+const uploadZoneEl = document.getElementById('upload-zone');
+['dragenter', 'dragover'].forEach(evt => {
+  uploadZoneEl.addEventListener(evt, (e) => {
+    e.preventDefault();
+    uploadZoneEl.classList.add('dragover');
+  });
+});
+['dragleave', 'drop'].forEach(evt => {
+  uploadZoneEl.addEventListener(evt, (e) => {
+    e.preventDefault();
+    uploadZoneEl.classList.remove('dragover');
+  });
+});
+uploadZoneEl.addEventListener('drop', (e) => {
+  const file = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) processImageFile(file);
+});
+
+// 6. Kiểm tra dữ liệu trước khi lưu
+function clearValidation() {
+  document.querySelectorAll('.form-group').forEach(g => g.classList.remove('invalid'));
+}
+function setFieldValid(groupId) {
+  document.getElementById(groupId).classList.remove('invalid');
+}
+function setFieldInvalid(groupId) {
+  document.getElementById(groupId).classList.add('invalid');
+}
+
+function validateForm() {
+  clearValidation();
+  let ok = true;
+
+  if (!currentImage) { setFieldInvalid('grp-image'); ok = false; }
+  if (!document.getElementById('inp-name').value.trim()) { setFieldInvalid('grp-name'); ok = false; }
+  const price = Number(document.getElementById('inp-price').value);
+  if (!price || price <= 0) { setFieldInvalid('grp-price'); ok = false; }
+  if (document.getElementById('inp-age').value === '') { setFieldInvalid('grp-age'); ok = false; }
+
+  return ok;
+}
+
+// 7. Nút LƯU (Thêm mới hoặc Cập nhật)
+function saveCat() {
+  if (!validateForm()) {
+    showToast("Vui lòng kiểm tra lại các trường được đánh dấu đỏ.");
+    return;
+  }
+
+  const newCat = {
+    id: editingId ? editingId : Date.now().toString(),
+    name: document.getElementById('inp-name').value.trim(),
+    image_url: currentImage,
+    breed: document.getElementById('inp-breed').value.trim(),
+    gender: document.getElementById('inp-gender').value,
+    price: Number(document.getElementById('inp-price').value) || 0,
+    age_months: document.getElementById('inp-age').value,
+    status: document.getElementById('inp-status').value,
+    description: document.getElementById('inp-desc').value.trim(),
+  };
+
+  if (editingId) {
+    const index = adminData.findIndex(c => c.id === editingId);
+    adminData[index] = newCat;
+    showToast("Đã cập nhật hồ sơ thành công!");
+  } else {
+    adminData.unshift(newCat);
+    showToast("Đã tạo hồ sơ mới!");
+  }
+
+  renderAdminGrid();
+  closeForm();
+}
+
+// 8. Live Preview
+function updatePreview() {
+  const name = document.getElementById('inp-name').value || 'Tên bé mèo...';
+  const breed = document.getElementById('inp-breed').value || '—';
+  const age = document.getElementById('inp-age').value;
+  const price = document.getElementById('inp-price').value;
+
+  document.getElementById('prev-img').src = currentImage || 'https://images.unsplash.com/photo-1573865526739-10659fec78a5?q=80&w=400&auto=format&fit=crop';
+  document.getElementById('prev-name').textContent = name;
+  document.getElementById('prev-breed').textContent = breed;
+  document.getElementById('prev-age').textContent = age ? age + ' tháng' : '—';
+  if (price) {
+    document.getElementById('prev-price').innerHTML = (Number(price) / 1000).toLocaleString('vi-VN') + 'k<br>đ';
+  } else {
+    document.getElementById('prev-price').innerHTML = '0k<br>đ';
+  }
+}
+
+// 9. Thông báo nhỏ (toast)
+let toastTimer = null;
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+// Khởi tạo chạy lần đầu
+renderAdminGrid();
+</script>
+</body>
+</html>
