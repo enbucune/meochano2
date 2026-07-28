@@ -352,7 +352,10 @@ let currentModalCat = null;  // con mèo đang mở trong modal (để dùng cho
 async function loginWithFacebook() {
   const { error } = await supabaseClient.auth.signInWithOAuth({
     provider: 'facebook',
-    options: { redirectTo: window.location.href }
+    options: {
+      redirectTo: window.location.href,
+      scopes: 'public_profile'
+    }
   });
   if (error) showToast('Không thể đăng nhập: ' + error.message);
 }
