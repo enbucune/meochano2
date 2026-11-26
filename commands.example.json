@@ -1,0 +1,105 @@
+{
+ "commands": [
+  {
+   "op": "duration",
+   "value": 10
+  },
+  {
+   "op": "character",
+   "id": "A",
+   "position": [
+    -2,
+    0,
+    0
+   ],
+   "yaw": 90,
+   "color": "#65caff"
+  },
+  {
+   "op": "character",
+   "id": "B",
+   "position": [
+    2,
+    0,
+    0
+   ],
+   "yaw": -90,
+   "color": "#ff9865"
+  },
+  {
+   "op": "pose",
+   "actor": "A",
+   "name": "guard",
+   "at": 0
+  },
+  {
+   "op": "pose",
+   "actor": "B",
+   "name": "guard",
+   "at": 0
+  },
+  {
+   "op": "motion",
+   "actor": "A",
+   "name": "walk",
+   "at": 0.3,
+   "distance": 1.8
+  },
+  {
+   "op": "motion",
+   "actor": "A",
+   "name": "punch",
+   "at": "end+0.1"
+  },
+  {
+   "op": "motion",
+   "actor": "B",
+   "name": "counter",
+   "at": 2.6
+  },
+  {
+   "op": "motion",
+   "actor": "B",
+   "name": "kick",
+   "at": "end+0.2"
+  },
+  {
+   "op": "motion",
+   "actor": "A",
+   "name": "fall",
+   "at": 4.4
+  },
+  {
+   "op": "motion",
+   "actor": "B",
+   "name": "jump",
+   "at": 6,
+   "height": 0.5,
+   "distance": 0.5
+  },
+  {
+   "op": "motion",
+   "actor": "B",
+   "name": "run",
+   "at": "end+0.2",
+   "distance": 3,
+   "direction": 90
+  },
+  {
+   "op": "frame",
+   "at": 0,
+   "azimuth": 20
+  },
+  {
+   "op": "frame",
+   "at": 5,
+   "azimuth": 60,
+   "elevation": 20
+  },
+  {
+   "op": "note",
+   "at": 9.5,
+   "text": "B chạy thoát khỏi khung hình"
+  }
+ ]
+}

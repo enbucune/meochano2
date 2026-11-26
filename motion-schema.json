@@ -1,27 +1,67 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "ai-motion-studio/motion-schema.json",
-  "title": "AI Motion Studio project (schemaVersion 2)",
-  "description": "Units: meters, degrees, seconds. Character faces +Z when yaw=0. Each track animates ONE channel. Key = [time, value, ease?]; ease belongs to the segment ENDING at this key (smooth = smoothstep, linear, hold = jump at key). Before the first key the first value holds; after the last key the last value holds. A channel without a track stays at rest (joint rotation 0, root = character position/yaw). Joint sign convention: shoulder/hip forward = negative X, elbow flex = negative X, knee flex = positive X, finger curl = positive X. Files without schemaVersion are schema 1 (v0.11 and older) and load unchanged.",
+  "title": "AI Motion Studio project (schemaVersion 2, app 0.13)",
+  "description": "Units: meters, degrees, seconds. Character faces +Z when yaw=0. Each track animates ONE channel. Key = [time, value, ease?]; ease belongs to the segment ENDING at this key (smooth = smoothstep, linear, hold = jump at key). Before the first key the first value holds; after the last key the last value holds. A channel without a track stays at rest (joint rotation 0, root = character position/yaw). Joint sign convention: shoulder/hip forward = negative X, elbow flex = negative X, knee flex = positive X, finger curl = positive X. Files without schemaVersion are schema 1 (v0.11 and older) and load unchanged. v0.13: eases smooth|linear|easeIn|easeOut|easeInOut|hold|strike|overshoot|cubic-bezier(x1,y1,x2,y2). Foot contact tracks lock planted feet (no sliding); feet of actors with contact tracks never sink below the floor. Prefer the high-level commands (node ams-cli.mjs catalog / build) over writing joint angles by hand.",
   "type": "object",
-  "required": ["fps", "duration", "characters", "tracks"],
+  "required": [
+    "fps",
+    "duration",
+    "characters",
+    "tracks"
+  ],
   "properties": {
-    "$schema": {"type": "string"},
-    "schemaVersion": {"const": 2, "description": "Data-structure version. Not the app version."},
-    "app": {"type": "string", "description": "App version that saved the file (informational), e.g. \"0.12\"."},
-    "legacyVersion": {"type": "string", "description": "Old free-form \"version\" label kept from schema-1 files."},
-    "fps": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
-    "duration": {"type": "number", "exclusiveMinimum": 0, "maximum": 600, "description": "Seconds; all key times should be ≤ duration."},
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 2,
+      "description": "Data-structure version. Not the app version."
+    },
+    "app": {
+      "type": "string",
+      "description": "App version that saved the file (informational), e.g. \"0.12\"."
+    },
+    "legacyVersion": {
+      "type": "string",
+      "description": "Old free-form \"version\" label kept from schema-1 files."
+    },
+    "fps": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 120
+    },
+    "duration": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 600,
+      "description": "Seconds; all key times should be ≤ duration."
+    },
     "characters": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "position"],
+        "required": [
+          "id",
+          "position"
+        ],
         "properties": {
-          "id": {"type": "string", "minLength": 1},
-          "position": {"$ref": "#/$defs/vec3", "description": "Rest root position [x, y, z] in meters; y=0 is the floor."},
-          "yaw": {"type": "number", "description": "Rest heading in degrees (90 = facing +X)."},
-          "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "position": {
+            "$ref": "#/$defs/vec3",
+            "description": "Rest root position [x, y, z] in meters; y=0 is the floor."
+          },
+          "yaw": {
+            "type": "number",
+            "description": "Rest heading in degrees (90 = facing +X)."
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
         }
       }
     },
@@ -30,12 +70,23 @@
       "description": "Boxes. Animate with actor \"@object:<index>\", joint \"$root\", axis px|py|pz (m), rx|ry|rz (deg), sx|sy|sz (size m).",
       "items": {
         "type": "object",
-        "required": ["position", "size"],
+        "required": [
+          "position",
+          "size"
+        ],
         "properties": {
-          "id": {"type": "string"},
-          "position": {"$ref": "#/$defs/vec3"},
-          "size": {"$ref": "#/$defs/vec3"},
-          "color": {"type": "string"}
+          "id": {
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/$defs/vec3"
+          },
+          "size": {
+            "$ref": "#/$defs/vec3"
+          },
+          "color": {
+            "type": "string"
+          }
         }
       }
     },
@@ -46,48 +97,187 @@
           {
             "title": "Joint rotation",
             "type": "object",
-            "required": ["actor", "joint", "axis", "keys"],
+            "required": [
+              "actor",
+              "joint",
+              "axis",
+              "keys"
+            ],
             "properties": {
-              "actor": {"type": "string", "description": "Character id."},
-              "joint": {"$ref": "#/$defs/joint"},
-              "axis": {"enum": ["x", "y", "z"]},
-              "keys": {"$ref": "#/$defs/numberKeys"}
+              "actor": {
+                "type": "string",
+                "description": "Character id."
+              },
+              "joint": {
+                "$ref": "#/$defs/joint"
+              },
+              "axis": {
+                "enum": [
+                  "x",
+                  "y",
+                  "z"
+                ]
+              },
+              "keys": {
+                "$ref": "#/$defs/numberKeys"
+              }
             }
           },
           {
             "title": "Character root",
             "type": "object",
-            "required": ["actor", "joint", "axis", "keys"],
+            "required": [
+              "actor",
+              "joint",
+              "axis",
+              "keys"
+            ],
             "properties": {
-              "actor": {"type": "string"},
-              "joint": {"const": "$root"},
-              "axis": {"enum": ["x", "y", "z", "yaw"], "description": "x/y/z = absolute world position (m); yaw = absolute heading (deg)."},
-              "keys": {"$ref": "#/$defs/numberKeys"}
+              "actor": {
+                "type": "string"
+              },
+              "joint": {
+                "const": "$root"
+              },
+              "axis": {
+                "enum": [
+                  "x",
+                  "y",
+                  "z",
+                  "yaw"
+                ],
+                "description": "x/y/z = absolute world position (m); yaw = absolute heading (deg)."
+              },
+              "keys": {
+                "$ref": "#/$defs/numberKeys"
+              }
             }
           },
           {
             "title": "Object transform",
             "type": "object",
-            "required": ["actor", "joint", "axis", "keys"],
+            "required": [
+              "actor",
+              "joint",
+              "axis",
+              "keys"
+            ],
             "properties": {
-              "actor": {"type": "string", "pattern": "^@object:[0-9]+$"},
-              "joint": {"const": "$root"},
-              "axis": {"enum": ["px", "py", "pz", "rx", "ry", "rz", "sx", "sy", "sz"]},
-              "keys": {"$ref": "#/$defs/numberKeys"}
+              "actor": {
+                "type": "string",
+                "pattern": "^@object:[0-9]+$"
+              },
+              "joint": {
+                "const": "$root"
+              },
+              "axis": {
+                "enum": [
+                  "px",
+                  "py",
+                  "pz",
+                  "rx",
+                  "ry",
+                  "rz",
+                  "sx",
+                  "sy",
+                  "sz"
+                ]
+              },
+              "keys": {
+                "$ref": "#/$defs/numberKeys"
+              }
             }
           },
           {
             "title": "Hand preset",
             "description": "Drives all 15 finger joints of one hand; poses blend between keys. An explicit finger track of the same hand overrides the preset for that joint/axis.",
             "type": "object",
-            "required": ["actor", "joint", "axis", "keys"],
+            "required": [
+              "actor",
+              "joint",
+              "axis",
+              "keys"
+            ],
             "properties": {
-              "actor": {"type": "string"},
-              "joint": {"enum": ["L_hand", "R_hand"]},
-              "axis": {"const": "preset"},
+              "actor": {
+                "type": "string"
+              },
+              "joint": {
+                "enum": [
+                  "L_hand",
+                  "R_hand"
+                ]
+              },
+              "axis": {
+                "const": "preset"
+              },
               "keys": {
-                "type": "array", "minItems": 1,
-                "items": {"type": "array", "minItems": 2, "maxItems": 3, "prefixItems": [{"type": "number", "minimum": 0}, {"$ref": "#/$defs/handPreset"}, {"$ref": "#/$defs/ease"}]}
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 3,
+                  "prefixItems": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "$ref": "#/$defs/handPreset"
+                    },
+                    {
+                      "$ref": "#/$defs/ease"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "title": "Foot contact",
+            "description": "1 = planted (position + orientation locked where the foot was at contact start), 2 = pivot on the ball of the foot (position locked, foot turns with the leg), 0 = lifted. Step values; 0.15 s blend on release. Orientation also follows the leg automatically when the body turns > 15–40° while planted.",
+            "type": "object",
+            "required": [
+              "actor",
+              "joint",
+              "axis",
+              "keys"
+            ],
+            "properties": {
+              "actor": {
+                "type": "string"
+              },
+              "joint": {
+                "enum": [
+                  "L_foot",
+                  "R_foot"
+                ]
+              },
+              "axis": {
+                "const": "contact"
+              },
+              "keys": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "enum": [
+                        0,
+                        1,
+                        2
+                      ]
+                    }
+                  ]
+                }
               }
             }
           }
@@ -98,30 +288,196 @@
       "type": "array",
       "description": "[time, azimuth°, elevation°, distance m, ease?, targetX?, targetY?, targetZ?]. Target defaults to [0, 1, 0].",
       "items": {
-        "type": "array", "minItems": 4, "maxItems": 8,
+        "type": "array",
+        "minItems": 4,
+        "maxItems": 8,
         "prefixItems": [
-          {"type": "number", "minimum": 0},
-          {"type": "number"},
-          {"type": "number", "exclusiveMinimum": -90, "exclusiveMaximum": 90},
-          {"type": "number", "exclusiveMinimum": 0, "maximum": 80},
-          {"$ref": "#/$defs/ease"},
-          {"type": "number"}, {"type": "number"}, {"type": "number"}
+          {
+            "type": "number",
+            "minimum": 0
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "number",
+            "exclusiveMinimum": -90,
+            "exclusiveMaximum": 90
+          },
+          {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 80
+          },
+          {
+            "$ref": "#/$defs/ease"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          }
         ]
+      }
+    },
+    "notes": {
+      "type": "array",
+      "description": "Motion intent, shown on the timeline and used for the video prompt.",
+      "items": {
+        "type": "object",
+        "required": [
+          "t",
+          "text"
+        ],
+        "properties": {
+          "t": {
+            "type": "number",
+            "minimum": 0
+          },
+          "until": {
+            "type": "number"
+          },
+          "text": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "motion": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "library": {
+      "type": "object",
+      "description": "Reusable content saved with the project (shared by user and AI).",
+      "properties": {
+        "motions": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/clip"
+          }
+        }
+      }
+    },
+    "intendedContacts": {
+      "type": "array",
+      "description": "Intended body contacts between characters (hits). The motion check reports them as INTENDED_CONTACT instead of LIMB_COLLISION.",
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "number"
+          },
+          "to": {
+            "type": "number"
+          },
+          "actors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   },
   "$defs": {
-    "vec3": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-    "ease": {"enum": ["smooth", "linear", "hold"]},
-    "handPreset": {"enum": ["open", "relaxed", "fist", "sword", "point"]},
+    "vec3": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "ease": {
+      "anyOf": [
+        {
+          "enum": [
+            "smooth",
+            "linear",
+            "easeIn",
+            "easeOut",
+            "easeInOut",
+            "hold",
+            "strike",
+            "overshoot"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^cubic-bezier\\(\\s*[0-9.]+\\s*,\\s*-?[0-9.]+\\s*,\\s*[0-9.]+\\s*,\\s*-?[0-9.]+\\s*\\)$"
+        }
+      ],
+      "description": "Ease of the segment ENDING at this key. strike = accelerates into the key (impacts); overshoot = passes the target then settles; hold = jump at key."
+    },
+    "handPreset": {
+      "enum": [
+        "open",
+        "relaxed",
+        "fist",
+        "sword",
+        "point"
+      ]
+    },
     "numberKeys": {
-      "type": "array", "minItems": 1, "description": "Sorted by time, no duplicate times.",
-      "items": {"type": "array", "minItems": 2, "maxItems": 3, "prefixItems": [{"type": "number", "minimum": 0}, {"type": "number"}, {"$ref": "#/$defs/ease"}]}
+      "type": "array",
+      "minItems": 1,
+      "description": "Sorted by time, no duplicate times.",
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 3,
+        "prefixItems": [
+          {
+            "type": "number",
+            "minimum": 0
+          },
+          {
+            "type": "number"
+          },
+          {
+            "$ref": "#/$defs/ease"
+          }
+        ]
+      }
     },
     "joint": {
       "description": "Hierarchy: hips > spine > chest > neck > head; chest > {L,R}_clavicle > _shoulder > _elbow > _forearm > _wrist > _finger{0-4}_{0-2} (0 = thumb); hips > {L,R}_hip > _knee > _ankle > _toe{0-4}_{0-1}.",
       "type": "string",
       "pattern": "^(hips|spine|chest|neck|head|[LR]_(clavicle|shoulder|elbow|forearm|wrist|hip|knee|ankle|finger[0-4]_[0-2]|toe[0-4]_[01]))$"
+    },
+    "clip": {
+      "type": "object",
+      "required": [
+        "duration",
+        "channels"
+      ],
+      "description": "Relative motion clip. Channel names: '<joint>.x|y|z' (deg absolute), '$root.fwd|side|up' (m relative to start in the facing frame; side = character's left), '$root.turn' (deg relative), 'L_hand.preset', 'L_foot.contact'. Keys [dt, value, ease?].",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "number"
+        },
+        "channels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array"
+          }
+        }
+      }
     }
   }
 }
