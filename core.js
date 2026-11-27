@@ -1,5 +1,5 @@
 // AI Motion Studio core: pure data logic (no DOM, no Three.js). Runs in browser and Node.
-export const APP_VERSION='0.13';
+export const APP_VERSION='0.16';
 export const SCHEMA_VERSION=2;
 export const EASES=['smooth','linear','easeIn','easeOut','easeInOut','hold','strike','overshoot'];
 // Also accepted: "cubic-bezier(x1,y1,x2,y2)" (CSS syntax). Unknown/missing ease = smooth (v0.11 behaviour).
@@ -61,11 +61,14 @@ export function cameraChannel(cameraKeys,i){let j=[1,2,3,5,6,7].indexOf(i);retur
 
 // ---------- Migration / backward compatibility ----------
 // schemaVersion 1 = every file before v0.12 (field "version" was an unrelated label, e.g. "0.3").
+export const objectName=(o,i)=>(typeof o?.name==='string'&&o.name.trim())||(o?.id!=null&&String(o.id).trim())||`Vật thể ${i+1}`;
 export function migrate(input){let p=JSON.parse(JSON.stringify(input));if(!p||typeof p!=='object')return p;let from=Number.isInteger(p.schemaVersion)?p.schemaVersion:1;
  if(from<2){if(p.version!==undefined&&p.legacyVersion===undefined)p.legacyVersion=String(p.version);delete p.version}
  p.schemaVersion=Math.max(from,SCHEMA_VERSION);
  if(Array.isArray(p.tracks))for(let t of p.tracks)if(Array.isArray(t.keys))t.keys.sort((a,b)=>a[0]-b[0]);
  if(Array.isArray(p.cameraKeys))p.cameraKeys.sort((a,b)=>a[0]-b[0]);
+ // every prop carries a human/AI-readable name (older files: from id, else "Vật thể N")
+ if(Array.isArray(p.objects))p.objects.forEach((o,i)=>{if(o&&typeof o==='object'&&!(typeof o.name==='string'&&o.name.trim()))o.name=objectName(o,i)});
  return p}
 
 // ---------- Validator ----------
@@ -82,7 +85,8 @@ export function validate(p){let errors=[],warnings=[],E=(m)=>errors.push(m),W=(m
  p.characters.forEach((c,i)=>{let n=`characters[${i}]`;if(typeof c?.id!=='string'||!c.id)E(n+': thiếu id');else if(ids.has(c.id))E(n+`: trùng id "${c.id}"`);else ids.add(c.id);
   if(!vec3(c?.position))E(n+': position phải là [x,y,z]');else{if(Math.abs(c.position[0])>20||Math.abs(c.position[2])>20)W(n+': đứng quá xa tâm (>20m)');if(c.position[1]<-0.5||c.position[1]>10)W(n+': độ cao bất thường')}
   if(c?.yaw!==undefined&&!fin(c.yaw))E(n+': yaw phải là số');if(c?.color!==undefined&&typeof c.color!=='string')W(n+': color nên là chuỗi #rrggbb')});
- (p.objects||[]).forEach((o,i)=>{let n=`objects[${i}]`;if(!vec3(o?.position))E(n+': position phải là [x,y,z]');if(!vec3(o?.size))E(n+': size phải là [x,y,z]');else if(o.size.some(s=>s<=0))W(n+': size có cạnh ≤ 0');else if(o.size.some(s=>s>50))W(n+': kích thước > 50m')});
+ (p.objects||[]).forEach((o,i)=>{let n=`objects[${i}]`;if(!vec3(o?.position))E(n+': position phải là [x,y,z]');if(!vec3(o?.size))E(n+': size phải là [x,y,z]');else if(o.size.some(s=>s<=0))W(n+': size có cạnh ≤ 0');else if(o.size.some(s=>s>50))W(n+': kích thước > 50m');if(o?.name!==undefined&&(typeof o.name!=='string'||!o.name.trim()))W(n+': name nên là chuỗi khác rỗng');if(o?.desc!==undefined&&typeof o.desc!=='string')W(n+': desc nên là chuỗi')});
+ {let seen=new Map();(p.objects||[]).forEach((o,i)=>{let k=typeof o?.name==='string'?o.name.trim().toLowerCase():'';if(!k)return;if(seen.has(k))W(`objects[${i}]: trùng tên "${o.name}" với objects[${seen.get(k)}] — AI sẽ khó phân biệt`);else seen.set(k,i)})}
  let checkKeys=(keys,n,valueCheck)=>{if(!Array.isArray(keys)||!keys.length){E(n+': keys rỗng');return}let prev=-Infinity,frames=new Set();keys.forEach((k,j)=>{let kn=`${n}.keys[${j}]`;if(!Array.isArray(k)||k.length<2){E(kn+': phải là [t, value, ease?]');return}if(!fin(k[0])){E(kn+': thời gian không hợp lệ');return}if(k[0]<0)E(kn+': thời gian âm');if(k[0]>dur+1e-9)W(kn+`: t=${k[0]}s vượt duration ${dur}s`);if(k[0]<prev)E(kn+': keys chưa sắp xếp theo thời gian');if(k[0]===prev)E(kn+': trùng thời gian (gây NaN khi nội suy)');else if(frames.has(frame(k[0])))W(kn+': hai key cùng một frame');prev=k[0];frames.add(frame(k[0]));if(k.length>2&&!isEase(k[2]))W(kn+`: ease "${k[2]}" không hợp lệ (dùng ${EASES.join('/')} hoặc cubic-bezier(x1,y1,x2,y2))`);valueCheck(k[1],kn)})};
  let seen=new Set();
  p.tracks.forEach((t,i)=>{let n=`tracks[${i}]`;if(!t||typeof t!=='object'){E(n+': không phải object');return}let label=`${n} ${t.actor}/${t.joint}/${t.axis}`,sig=t.actor+'|'+t.joint+'|'+t.axis;if(seen.has(sig))W(label+': track trùng lặp, track sau sẽ ghi đè');seen.add(sig);
@@ -187,6 +191,17 @@ export function solveTwoBone(w,local,upper,mid,end,target,endQ,poleHint){let A=w
  let midLocal=Q.euler(...(local.rot[mid]||[0,0,0]).map(v=>v*R)),midW=Q.mul(upW,midLocal),cur=Q.rot(midW,OFFSET[end]),midW2=Q.mul(Q.fromUnit(V.norm(cur),V.norm(V.sub(C2,B2))),midW);
  let res={[upper]:Q.toEuler(Q.mul(Q.inv(parQ),upW)).map(v=>v/R),[mid]:Q.toEuler(Q.mul(Q.inv(upW),midW2)).map(v=>v/R)};
  if(endQ)res[end]=Q.toEuler(Q.mul(Q.inv(midW2),endQ)).map(v=>v/R);return res}
+// Hinge 2-bone IK: the middle joint (knee/elbow) bends ONLY around its local X (sign +1 knee, −1 elbow),
+// the upper joint aims the chain at the target and twists it so the middle joint points toward `pole`.
+export function solveHinge(w,local,upper,mid,end,target,endQ,pole,sign=1){let A=w.pos[upper],B=w.pos[mid],Cc=w.pos[end],l1=V.len(V.sub(B,A)),l2=V.len(V.sub(Cc,B)),ta=V.sub(target,A),dist=V.len(ta);if(dist<1e-6||l1<1e-6||l2<1e-6)return null;
+ let d=Math.min(Math.max(dist,Math.abs(l1-l2)+1e-5),l1+l2-1e-5),bend=Math.PI-Math.acos(Math.max(-1,Math.min(1,(l1*l1+l2*l2-d*d)/(2*l1*l2)))),u=V.mul(ta,1/dist);
+ let par=RIG.find(r=>r[0]===upper)[1],l2c={...local,rot:{...local.rot,[mid]:[sign*bend/R,0,0]}},w2=fk(l2c);
+ let q1=Q.fromUnit(V.norm(V.sub(w2.pos[end],w2.pos[upper])),u),upW=Q.mul(q1,w2.q[upper]);
+ let kneeDir=Q.rot(upW,OFFSET[mid]),kp=V.sub(kneeDir,V.mul(u,V.dot(kneeDir,u))),pp=pole?V.sub(pole,V.mul(u,V.dot(pole,u))):null;
+ if(pp&&V.len(kp)>1e-6&&V.len(pp)>1e-6){kp=V.norm(kp);pp=V.norm(pp);let c=Math.max(-1,Math.min(1,V.dot(kp,pp))),cr=[kp[1]*pp[2]-kp[2]*pp[1],kp[2]*pp[0]-kp[0]*pp[2],kp[0]*pp[1]-kp[1]*pp[0]],ang=Math.atan2(V.dot(cr,u),c),h=ang/2,s=Math.sin(h);upW=Q.mul([u[0]*s,u[1]*s,u[2]*s,Math.cos(h)],upW)}
+ let res={[upper]:Q.toEuler(Q.mul(Q.inv(w.q[par]),upW)).map(v=>v/R),[mid]:[sign*bend/R,0,0]};
+ if(endQ){let midW=Q.mul(upW,Q.euler(sign*bend,0,0)),endPar=RIG.find(r=>r[0]===end)[1];let pw=midW;if(endPar!==mid){pw=Q.mul(midW,Q.euler(...(local.rot[endPar]||[0,0,0]).map(v=>v*R)))}res[end]=Q.toEuler(Q.mul(Q.inv(pw),endQ)).map(v=>v/R)}
+ return res}
 // Contact track: [[t,1],[t,0]...] step function. Returns {on, start, release}.
 // Values: 0 lifted, 1 planted (position + orientation locked), 2 pivot (position locked, foot turns with the leg).
 export function contactAt(keys,t){if(!keys?.length)return null;let on=keys[0][1]>=.5,mode=keys[0][1],start=0,release=-Infinity,prevStart=0;for(let k of keys){if(k[0]>t)break;let v=k[1]>=.5;mode=k[1];if(v&&!on){on=true;start=k[0]}else if(!v&&on){on=false;release=k[0];prevStart=start}}return on?{on,start,mode}:{on,release,start:prevStart,mode}}
@@ -198,12 +213,12 @@ export function footLock(p,id,t,local){let e=actorTracks(p,id),changed={};for(le
   let cw=fk(local),cur=cw.pos[s+'_ankle'],target=V.lerp(cur,lockPos,w),fwd=Q.rot(cw.q.hips,[0,0,1]);
   // out of reach (lunge): lift the heel up to 8 cm instead of sliding the foot
   {let hp=cw.pos[s+'_hip'],Lmax=.879,hx=Math.hypot(target[0]-hp[0],target[2]-hp[2]);if(V.len(V.sub(target,hp))>Lmax&&hx<Lmax){let y=hp[1]-Math.sqrt(Lmax*Lmax-hx*hx);target=[target[0],Math.min(Math.max(target[1],y),lockPos[1]+.08),target[2]]}}
-  let r=solveTwoBone(cw,local,s+'_hip',s+'_knee',s+'_ankle',target,null,fwd);if(!r)continue;
+  let r=solveHinge(cw,local,s+'_hip',s+'_knee',s+'_ankle',target,null,fwd,1);if(!r)continue;
   // ankle: locked orientation blended with the orientation the leg gives (pivot on the ball of the foot)
   let tmp={...local,rot:{...local.rot,...r}},tw=fk(tmp),tq=Q.slerp(tw.q[s+'_ankle'],lockQ,w*ow);r[s+'_ankle']=Q.toEuler(Q.mul(Q.inv(tw.q[s+'_knee']),tq)).map(v=>v/R);
   for(let j in r){local.rot[j]=r[j];changed[j]=r[j]}}
  // Ground clamp (only for actors using contact tracks, so older projects render unchanged).
- let gw=null;if(e.contacts.L||e.contacts.R)for(let s of ['L','R']){gw=gw||fk(local);let a=gw.pos[s+'_ankle'];if(a[1]>=ANKLE_HEIGHT-1e-4)continue;let r=solveTwoBone(gw,local,s+'_hip',s+'_knee',s+'_ankle',[a[0],ANKLE_HEIGHT,a[2]],gw.q[s+'_ankle'],Q.rot(gw.q.hips,[0,0,1]));if(!r)continue;for(let j in r){local.rot[j]=r[j];changed[j]=r[j]}gw=null}
+ let gw=null;if(e.contacts.L||e.contacts.R)for(let s of ['L','R']){gw=gw||fk(local);let a=gw.pos[s+'_ankle'];if(a[1]>=ANKLE_HEIGHT-1e-4)continue;let r=solveHinge(gw,local,s+'_hip',s+'_knee',s+'_ankle',[a[0],ANKLE_HEIGHT,a[2]],gw.q[s+'_ankle'],Q.rot(gw.q.hips,[0,0,1]),1);if(!r)continue;for(let j in r){local.rot[j]=r[j];changed[j]=r[j]}gw=null}
  return changed}
 export function evalPose(p,id,t){let l=evalLocal(p,id,t);if(l)footLock(p,id,t,l);return l}
 // Lowest point of the body (sole/head/hands) for auto-grounding. Returns y of the lowest surface.

@@ -8,8 +8,8 @@
 //   node ams-cli.mjs inspect <project.json> <time>    → world positions, facing, contacts, distances between characters
 //   node ams-cli.mjs bake <in.json> <out.json>       → plain v0.11 JSON (foot lock, presets, eases baked; opens in every version)
 import fs from 'fs';import path from 'path';
-import {migrate,validate,optimize,stringifyProject,fullReport} from './core.js?v=0.13';
-import {runCommands,makePrompt,catalog,inspect,bakeProject} from './library.js?v=0.13';
+import {migrate,validate,optimize,stringifyProject,fullReport} from './core.js?v=0.16';
+import {runCommands,makePrompt,catalog,inspect,bakeProject} from './library.js?v=0.16';
 const [cmd,a,b]=process.argv.slice(2),read=f=>JSON.parse(fs.readFileSync(f,'utf8'));
 const usage=()=>{console.log(fs.readFileSync(new URL(import.meta.url),'utf8').split('\n').slice(1,10).join('\n').replace(/^\/\/ ?/gm,''));process.exit(2)};
 switch(cmd){

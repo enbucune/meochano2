@@ -1,1 +1,389 @@
-<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="app-version" content="0.13"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Motion Studio</title><style>.dot.sel{outline:2px solid #ffd84a;outline-offset:2px}#railSel{position:absolute;top:0;height:100%;background:#ffd84a33;border:1px solid #ffd84a;display:none;pointer-events:none}#notes{position:relative;height:46px;margin:6px 8px 0}.note{position:absolute;height:14px;min-width:6px;max-width:40%;padding:0 4px;font-size:11px;line-height:14px;background:#2f6f5c;border-left:2px solid #84ed83;color:#e6edf5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-radius:2px}.issue{font-size:12px;padding:3px 4px;border-bottom:1px solid #263448;cursor:pointer}.issue.error{color:#ff8a93}.issue.warning{color:#ffd27a}.issue.info{color:#9bd5ff}.row2{display:grid;grid-template-columns:1fr 1fr;gap:4px}.row2 label{margin-top:4px;font-size:12px}.row2 input,.row2 select{width:100%;margin:0}#timelineTools button{padding:6px 8px}#timelineTools input{width:60px}*{box-sizing:border-box}body{margin:0;background:#111923;color:#e6edf5;font:14px system-ui}header,footer{padding:12px;background:#1c2735}main{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:12px;padding:12px}#view{height:65vh;min-height:300px}canvas{display:block;touch-action:none}#cameraMode{max-width:230px}#play{min-width:125px}aside{padding:12px;background:#1c2735}button,select,input{background:#29394b;color:white;border:1px solid #53657a;border-radius:5px;padding:8px;margin:4px}button{cursor:pointer}input[type=range]{width:100%;margin:0}label{display:block;margin-top:10px}pre{white-space:pre-wrap}#rail{position:relative;height:35px;background:#263448;margin:12px 8px}#dots{position:absolute;inset:0}.dot{position:absolute;top:12px;width:10px;height:10px;padding:0;margin:0;transform:translateX(-50%) rotate(45deg);background:#a45b60;border:0;border-radius:1px}.dot.own{background:#ff424e;width:13px;height:13px;top:10px}#cursor{position:absolute;height:100%;width:2px;background:#fff;pointer-events:none}#allKey{background:#a72c39;border-color:#e65e69}#delKey{background:#442832;border-color:#a45b60}button:disabled{opacity:.45;cursor:default}.editTools{display:grid;gap:4px;margin-top:10px}.editTools select{width:100%;max-width:none!important;margin:0}.hint{font-size:12px;color:#aabbd0}.dot.active{outline:2px solid #fff;outline-offset:2px;background:#ff424e}.dot{background:#ff424e}.dot:hover{outline:2px solid #ffe4a8}aside{min-width:0;max-height:calc(100vh - 75px);overflow:auto;align-self:start;position:sticky;top:8px}#info{font-size:12px;color:#b5c6db}#view{width:100%} @media(max-width:700px){main{grid-template-columns:1fr}aside{position:static;max-height:none}}#selection.selected{color:#ffe06b}#legend{display:grid;gap:4px;max-height:180px;overflow:auto;margin:8px 0}.legendRow{display:flex;align-items:center;gap:8px;padding:4px 6px;border:1px solid transparent;border-radius:4px;overflow-wrap:anywhere}.legendRow.chosen{border-color:#ffe06b;color:#ffe06b;background:#413b29}.swatch{flex:none;width:12px;height:12px;border-radius:3px}.outlineToggle{display:flex;align-items:center;gap:6px}.outlineToggle input{margin:0;accent-color:#67b9f2}#outlineHint{line-height:1.5}</style><header><b>AI MOTION STUDIO</b> · v0.13 · Timeline chung</header><main><section><div id="cameraHelp" style="padding:6px 4px;color:#aabbd0;font-size:12px">Kéo trái: xoay · Kéo phải / Shift: dịch camera · Cuộn: zoom · WASD / Q E: di chuyển · Space: phát/dừng · 1–4: công cụ · X/Y/Z: trục · J/L: keyframe trước/sau</div><div id="view"></div><div id="notes" aria-label="Ghi chú ý đồ chuyển động"></div><div id="rail"><div id="railSel"></div><div id="dots"></div><div id="cursor"></div></div><input id="time" type="range" min="0" max="40" step=".0333"><span id="clock"></span><button id="play">▶ Phát (Space)</button><button id="reset">Về đầu</button><button id="allKey">◆ Lưu keyframe (K)</button><button id="delKey">Xóa keyframe (Delete)</button><button id="undo">Hoàn tác</button><button id="redo">Làm lại</button><button id="copyPose">Sao chép (C)</button><button id="pastePose" disabled>Dán &amp; lưu (V)</button><button id="record">Ghi video</button><div id="timelineTools"><span id="selInfo" class="hint"></span><br><button id="addNote">✎ Ghi chú (N)</button><button id="pasteRange" disabled>Sao chép vùng → mốc hiện tại</button>Co giãn × <input id="scaleFactor" type="number" value="0.75" step="0.05" min="0.05"><button id="scaleRange" disabled>Áp dụng</button><button id="deleteRange" disabled>Xoá vùng</button><button id="saveClip" disabled>★ Lưu vùng thành chuyển động</button></div><p id="status"></p></section><aside><b>Điều khiển 3D</b><div class="editTools"><select id="tool"><option value="camera">[1] Camera · tự do</option><option value="rotate">[2] Xoay khớp / vật thể</option><option value="move">[3] Di chuyển nhân vật / vật thể</option><option value="scale">[4] Đổi kích thước vật thể</option><option value="ik">[8] IK · Kéo tay / chân</option></select><select id="cameraMode" aria-label="Chế độ camera"><option value="orbit">[5] Camera: Xoay quanh điểm</option><option value="pan">[6] Camera: Kéo ngang / dọc</option><option value="fly">[7] Camera: Góc nhìn tự do</option></select><select id="axis"><option value="x">Trục X</option><option value="y">Trục Y</option><option value="z">Trục Z</option></select></div><details style="margin:12px 0"><summary style="cursor:pointer;color:#9bd5ff">Phím tắt thao tác nhanh</summary><div class="hint" style="line-height:1.8;margin-top:6px">1/2/3/4: Camera / Xoay / Di chuyển / Scale<br>8: IK kéo cổ tay / cổ chân / khuỷu / gối<br>P / M: Áp tư thế / Lật trái↔phải<br>N: Ghi chú ý đồ<br>Timeline: kéo nền để chọn vùng, kéo dấu đỏ để dời, Alt+kéo để sao chép, Shift+bấm chọn lẻ, Delete xoá vùng<br>C / V: Sao chép / dán &amp; lưu toàn cảnh<br>G / T: Ghost / Motion Trail<br>5/6/7: Orbit / Pan / Free camera<br>X/Y/Z: Chọn trục<br>↑ → / ↓ ←: Tăng / giảm trên trục (chế độ chỉnh)<br>Shift + mũi tên: Bước lớn<br>Space: Phát / dừng<br>K: Lưu toàn cảnh · Delete: Xóa keyframe<br>J/L: Keyframe trước / sau<br>, / . : Lùi / tiến 1 frame<br>Shift + , / . : Lùi / tiến 1 giây<br>Home/End: Đầu / cuối clip<br>Cmd/Ctrl + Z: Hoàn tác<br>Cmd/Ctrl + Shift + Z: Làm lại<br>H: Camera mặc định · Esc: Bỏ chọn<br>WASD / QE: Di chuyển camera (chế độ 1)<br>Chuột phải: Dịch camera · Cuộn: Zoom</div></details><hr><b>Hỗ trợ animation</b><label class="outlineToggle"><input id="ghost" type="checkbox"> Ghost Frame (G)</label><label class="outlineToggle"><input id="trail" type="checkbox"> Motion Trail (T)</label><label>Khoảng xem trước / sau</label><select id="ghostGap"><option value="0.1">0,1 giây</option><option value="0.25" selected>0,25 giây</option><option value="0.5">0,5 giây</option><option value="1">1 giây</option></select><p class="hint">Ghost: xanh là trước, cam là sau. Trail: đường đi ±1 giây của khớp/vật thể đang chọn hoặc camera. Chỉ hiện khi dừng, không lọt vào clip.</p><p class="hint">IK (8): kéo cổ tay, cổ chân, khuỷu hoặc đầu gối. Giữ nguyên chiều dài xương, tự gập khớp. Dùng 2 để xoay từng đốt.</p><label>Tốc độ phát xem trước</label><select id="speed"><option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><hr><b>Đối tượng đang chọn</b><h3 id="selection">Camera</h3><label class="outlineToggle"><input id="showOutlines" type="checkbox" checked> Viền phân biệt đối tượng</label><label class="outlineToggle"><input id="showParts" type="checkbox" checked> Viền từng khớp, đốt ngón tay/chân</label><label class="outlineToggle"><input id="detailResolution" type="checkbox" checked> Tăng độ nét clip (tối đa 1,5×)</label><div id="legend" aria-label="Màu viền đối tượng"></div><p id="outlineHint" class="hint">Vàng: đối tượng đang chọn · Hồng: khớp đang chỉnh. Khi ghi video giữ viền từng đốt ngón và viền phân biệt; ẩn viền lựa chọn.</p><p id="navHint">Xoay quanh điểm nhìn, kéo phải hoặc Shift + kéo để dịch điểm nhìn. Cuộn để zoom.</p><button id="homeCamera">Góc nhìn mặc định</button><p>Chọn chế độ rồi kéo trực tiếp trên mô hình. Lưu keyframe sẽ chốt tất cả nhân vật, vật thể và camera.</p><label>Nội suy</label><select id="ease"><option value="smooth">Mượt</option><option value="linear">Đều (Linear)</option><option value="easeIn">Ease In · tăng tốc</option><option value="easeOut">Ease Out · giảm tốc</option><option value="easeInOut">Ease In-Out</option><option value="strike">Lực đánh · bung mạnh cuối</option><option value="overshoot">Nảy quá đà</option><option value="hold">Giữ / cắt</option><option value="bezier">Bezier tuỳ chỉnh…</option></select><input id="bezier" value="0.25,0.1,0.25,1" style="display:none;width:95%" aria-label="cubic-bezier x1,y1,x2,y2"><label>Thư viện tư thế</label><div class="editTools"><select id="poseSel" aria-label="Tư thế"></select><button id="applyPose">Áp dụng tư thế (P)</button><button id="mirrorPose">⇋ Lật trái ↔ phải (M)</button><label class="outlineToggle" style="margin:0"><input id="poseGround" type="checkbox" checked> Tự chạm sàn</label></div><label>Thư viện chuyển động</label><div class="editTools"><select id="motionSel" aria-label="Chuyển động"></select><div class="row2"><label>Tốc độ ×<input id="mSpeed" type="number" value="1" step="0.1" min="0.1"></label><label>Thời lượng (s)<input id="mDuration" type="number" step="0.1" min="0.1" placeholder="tự động"></label><label id="mDistanceL">Quãng đường (m)<input id="mDistance" type="number" value="2" step="0.1"></label><label id="mDirectionL">Hướng (°)<input id="mDirection" type="number" value="0" step="15"></label><label id="mHeightL">Độ cao (m)<input id="mHeight" type="number" value="0.4" step="0.05"></label><label id="mSideL">Bên<select id="mSide"><option value="R">Phải</option><option value="L">Trái</option></select></label></div><button id="addMotion">＋ Thêm chuyển động tại mốc này</button></div><p class="hint">Chuyển động tự nối từ tư thế hiện tại, tự khoá chân khi chạm đất và tự thêm ghi chú. Chỉnh lại bằng tay rồi K như bình thường.</p><label class="outlineToggle"><input id="gizmoOn" type="checkbox" checked> Vòng xoay XYZ trên khớp</label><label>Preset bàn tay</label><div class="editTools"><select id="handPreset" aria-label="Preset bàn tay"></select><select id="handSide" aria-label="Tay áp dụng"><option value="auto">Theo khớp đang chọn</option><option value="L">Tay trái</option><option value="R">Tay phải</option><option value="both">Hai tay</option></select><button id="applyPreset">✋ Áp dụng preset tại mốc này</button></div><p class="hint">Chọn nhân vật hoặc khớp tay, bấm áp dụng. Tự lưu thành keyframe tại thời điểm hiện tại, nội suy theo kiểu đã chọn.</p><label>Keyframe toàn cảnh</label><select id="markers" size="5" style="width:95%"></select><p class="hint">Bấm dấu đỏ để tới mốc; bấm chuột phải vào dấu đỏ để xóa ngay.</p><label>Đến giây</label><input id="seek" type="number" min="0" step=".033" style="width:100px"><button id="go">Đến</button><label>Thời lượng</label><input id="duration" type="number" min="1" max="600" style="width:100px"><button id="setDuration">Áp dụng</button><hr><b>Khôi phục dự án</b><p id="backupStatus" class="hint">Tự lưu sau mỗi thay đổi keyframe đã chốt.</p><button id="restoreBackup" disabled>Khôi phục bản tự lưu</button><button id="download">Xuất dự án JSON</button><button id="agent">Xuất position cho Agent</button><button id="bakeBtn">Xuất JSON chuẩn v0.11 (bake)</button><button id="reportBtn">Xuất báo cáo lỗi cho AI</button><button id="promptBtn">Xuất prompt video</button><label>Khung video</label><select id="videoSize"><option value="view">Theo khung xem</option><option value="1280x720" selected>16:9 · 1280×720</option><option value="1920x1080">16:9 · 1920×1080</option><option value="720x1280">9:16 · 720×1280</option><option value="1080x1080">1:1 · 1080×1080</option></select><label class="outlineToggle"><input id="withPrompt" type="checkbox" checked> Xuất kèm prompt khi ghi video</label><button id="optimizeBtn">Tối ưu JSON (không đổi chuyển động)</button><button id="validateBtn">Kiểm tra chuyển động</button><details id="validationBox" style="margin:8px 0"><summary id="validationSummary" style="cursor:pointer;color:#9bd5ff">Kiểm tra dữ liệu</summary><div id="validation" class="hint" style="max-height:260px;overflow:auto"></div></details><label>Nhập JSON</label><input id="upload" type="file" accept=".json" style="width:100%"><pre id="info"></pre></aside></main><footer>Timeline chung · Keyframe toàn cảnh · FK / IK · Three.js</footer><script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script><script type="module" src="./engine.js?v=0.13"></script></html>
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<meta name="app-version" content="0.16">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Motion Studio</title>
+<style>
+:root{--bg:#0d131b;--panel:#141d28;--panel2:#1a2532;--panel3:#223043;--line:#2a3a4e;--line2:#3a5069;--text:#e7edf4;--muted:#8da0b6;--accent:#4cb3ff;--accent2:#2470b3;--key:#ff4d5e;--warn:#ffd27a;--err:#ff8a93;--sel:#ffe06b}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+button,select,input{font:inherit;color:var(--text);background:var(--panel3);border:1px solid var(--line);border-radius:6px;height:30px;padding:0 10px;margin:0}
+button{cursor:pointer;white-space:nowrap}
+button:hover:not(:disabled),select:hover{border-color:var(--line2);background:#29394f}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+select{padding:0 6px}
+input[type=number]{padding:0 6px;width:100%}
+input[type=checkbox]{height:auto;width:auto;accent-color:var(--accent)}
+kbd{font:11px ui-monospace,Menlo,monospace;background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--muted)}
+.primary{background:var(--accent2);border-color:var(--accent)}
+.primary:hover:not(:disabled){background:#2c82cc}
+.keybtn{background:#8b2532;border-color:var(--key)}
+.keybtn:hover:not(:disabled){background:#a12d3c}
+.quiet{background:transparent}
+.icon{width:30px;padding:0;text-align:center}
+.wide{width:100%}
+.toggle{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;margin:0;user-select:none}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.sep{width:1px;height:22px;background:var(--line);flex:none}
+
+/* top bar */
+.topbar{height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{font-weight:700;white-space:nowrap;margin-right:4px}
+.brand small{color:var(--muted);font-weight:500;margin-left:4px}
+.grp{display:flex;gap:4px;align-items:center}
+#status{flex:1;min-width:0;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0 6px}
+#upload{display:none}
+label.button{display:inline-flex;align-items:center;height:30px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel3);cursor:pointer;white-space:nowrap}
+label.button:hover{border-color:var(--line2);background:#29394f}
+#record{color:#ffb3bb}
+
+/* layout */
+.layout{height:calc(100vh - 48px);display:grid;grid-template-columns:minmax(0,1fr) 330px}
+.stage{display:grid;grid-template-rows:minmax(0,1fr) auto;min-width:0;min-height:0}
+.viewport{position:relative;min-height:0;background:#0a1017;overflow:hidden}
+#view{position:absolute;inset:0}
+canvas{display:block;touch-action:none}
+.toolbar{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none;align-items:flex-start}
+.seg{display:flex;gap:2px;padding:3px;background:rgba(20,29,40,.92);border:1px solid var(--line);border-radius:8px;pointer-events:auto;backdrop-filter:blur(4px)}
+.seg button{height:26px;border:0;background:transparent;padding:0 9px;border-radius:5px;color:var(--muted)}
+.seg button:hover:not(:disabled){background:var(--panel3);color:var(--text)}
+.seg button.on{background:var(--accent2);color:#fff}
+.seg button kbd{margin-left:5px;background:transparent;border:0;padding:0;color:inherit;opacity:.6}
+.seg.dim{opacity:.45}
+.seg.dim:hover{opacity:1}
+textarea{font:inherit;color:var(--text);background:var(--panel3);border:1px solid var(--line);border-radius:6px;padding:6px;width:100%;resize:vertical;margin:0}
+#labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.objLabel{position:absolute;transform:translate(-50%,calc(-100% - 6px));font-size:11px;line-height:16px;white-space:nowrap;color:var(--text);background:rgba(10,16,23,.82);border:1px solid var(--line);border-left:3px solid var(--c,#8da0b6);padding:0 6px;border-radius:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.objLabel.on{border-color:var(--sel);color:var(--sel)}
+.legendRow{cursor:pointer}.legendRow:hover{background:var(--panel2)}
+#navHint{position:absolute;left:12px;bottom:10px;margin:0;max-width:min(560px,70%);color:var(--muted);font-size:12px;background:rgba(10,16,23,.75);padding:4px 8px;border-radius:6px;pointer-events:none}
+
+/* timeline */
+.timeline{background:var(--panel);border-top:1px solid var(--line);padding:8px 12px 10px}
+.transport{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+#play{min-width:84px}
+#clock{font-variant-numeric:tabular-nums;min-width:9.5em;text-align:center;font-weight:600}
+.transport .spacer{flex:1}
+#speed{width:66px}
+#notes{position:relative;height:30px;margin:8px 2px 2px}
+#notes.empty{height:2px;margin-top:6px}
+.note{position:absolute;height:13px;min-width:6px;max-width:40%;padding:0 4px;font-size:11px;line-height:13px;background:#285f50;border-left:2px solid #84ed83;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-radius:2px}
+#rail{position:relative;height:28px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;cursor:crosshair}
+#dots{position:absolute;inset:0}
+.dot{position:absolute;top:8px;width:10px;height:10px;padding:0;margin:0;transform:translateX(-50%) rotate(45deg);background:var(--key);border:0;border-radius:1px;cursor:grab}
+.dot.own{width:11px;height:11px;top:7px}
+.dot:hover{outline:2px solid #ffe4a8;background:var(--key)}
+.dot.active{outline:2px solid #fff;outline-offset:2px}
+.dot.sel{outline:2px solid var(--sel);outline-offset:2px}
+#cursor{position:absolute;top:-3px;bottom:-3px;width:2px;background:#fff;pointer-events:none;border-radius:1px}
+#railSel{position:absolute;top:0;height:100%;background:#ffd84a33;border:1px solid #ffd84a;display:none;pointer-events:none}
+#time{width:100%;height:16px;margin:4px 0 0;padding:0;background:transparent;border:0;accent-color:var(--accent)}
+.rangebar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px}
+#selInfo{margin-right:auto;color:var(--muted);font-size:12px}
+#scaleFactor{width:62px}
+.rangebar .label{color:var(--muted);font-size:12px}
+
+/* side panel */
+.panel{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
+.selhead{padding:10px 12px 8px;border-bottom:1px solid var(--line)}
+.selhead .cap{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+#selection{margin:2px 0 0;font-size:15px;font-weight:600;overflow-wrap:anywhere}
+#selection.selected{color:var(--sel)}
+.tabs{display:flex;border-bottom:1px solid var(--line);padding:0 6px}
+.tabs button{flex:1;height:36px;border:0;border-radius:0;background:transparent;color:var(--muted);border-bottom:2px solid transparent;padding:0 4px}
+.tabs button:hover:not(:disabled){background:transparent;color:var(--text)}
+.tabs button.on{color:var(--text);border-bottom-color:var(--accent)}
+.tabbody{flex:1;min-height:0;overflow:auto;padding:2px 12px 16px}
+[hidden]{display:none!important}
+.tab{display:none}
+.tab.on{display:block}
+.card{margin-top:14px}
+.card>h4{margin:0 0 7px;font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.stack{display:grid;gap:6px}
+.row{display:flex;gap:6px;align-items:center}
+.row>*{flex:1;min-width:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.field{display:grid;gap:3px;font-size:12px;color:var(--muted);margin:0}
+.field input,.field select{color:var(--text);width:100%}
+.stack select,.stack button{width:100%}
+.field .row>button{flex:none;width:auto}
+#inspector{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+#inspector .inspTitle{grid-column:1/-1;font-size:12px;color:var(--muted);margin-top:2px}
+#inspector .insp{display:flex;align-items:center;gap:4px;font-size:12px;margin:0;color:var(--muted)}
+#inspector input{width:100%}
+#inspector:empty::before{content:"Chọn một khớp, nhân vật hoặc vật thể để chỉnh số chính xác.";grid-column:1/-1;font-size:12px;color:var(--muted)}
+#markers{width:100%;height:auto;padding:4px}
+#legend{display:grid;gap:3px;max-height:170px;overflow:auto}
+.legendRow{display:flex;align-items:center;gap:8px;padding:3px 6px;border:1px solid transparent;border-radius:5px;overflow-wrap:anywhere}
+.legendRow.chosen{border-color:var(--sel);color:var(--sel);background:#3a3524}
+.swatch{flex:none;width:11px;height:11px;border-radius:3px}
+#validation{max-height:260px;overflow:auto;margin-top:6px}
+.issue{font-size:12px;padding:3px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.issue.error{color:var(--err)}.issue.warning{color:var(--warn)}.issue.info{color:#9bd5ff}
+#validationBox>summary{cursor:pointer;color:var(--muted);font-size:12px}
+#info{font-size:12px;color:var(--muted);white-space:pre-wrap;margin:0}
+#backupStatus{margin-top:2px}
+
+/* help dialog */
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line2);border-radius:10px;padding:0;width:min(720px,94vw);max-height:86vh}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+.dlghead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)}
+.dlghead h3{margin:0;font-size:15px}
+.dlgbody{padding:6px 16px 16px;overflow:auto;max-height:calc(86vh - 56px);display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}
+.dlgbody h4{grid-column:1/-1;margin:12px 0 2px;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.sc{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #1f2b3a}
+.sc span:last-child{white-space:nowrap}
+
+@media(max-width:960px){
+ body{overflow:auto}
+ .layout{height:auto;grid-template-columns:1fr}
+ .stage{grid-template-rows:62vh auto}
+ .panel{border-left:0;border-top:1px solid var(--line)}
+ .tabbody{overflow:visible}
+ .topbar{height:auto;flex-wrap:wrap;padding:8px 12px}
+ #status{flex-basis:100%;order:9;margin:0}
+}
+</style>
+
+<header class="topbar">
+ <div class="brand">AI Motion Studio<small>v0.16</small></div>
+ <div class="grp">
+  <label class="button" for="upload" title="Mở file project JSON">Mở</label>
+  <input id="upload" type="file" accept=".json">
+  <button id="download" title="Lưu project JSON (tự tối ưu, chuyển động giữ nguyên)">Lưu JSON</button>
+ </div>
+ <span class="sep"></span>
+ <div class="grp">
+  <button id="undo" class="icon" title="Hoàn tác (Ctrl+Z)">↶</button>
+  <button id="redo" class="icon" title="Làm lại (Ctrl+Y)">↷</button>
+ </div>
+ <span class="sep"></span>
+ <label class="toggle" title="Chỉnh xong tự lưu keyframe toàn cảnh. Tắt thì bấm K để lưu."><input id="autoKey" type="checkbox" checked> Auto-key</label>
+ <p id="status" role="status"></p>
+ <div class="grp">
+  <button id="record" title="Ghi video xem trước theo thời gian thực (cài đặt ở tab Xuất)">● Ghi video</button>
+  <button id="helpBtn" class="icon" title="Phím tắt (?)">?</button>
+ </div>
+</header>
+
+<main class="layout">
+ <section class="stage">
+  <div class="viewport">
+   <div id="view"></div>
+   <div class="toolbar">
+    <div class="seg" id="toolSeg" role="group" aria-label="Công cụ">
+     <button data-tool="camera">Camera<kbd>1</kbd></button>
+     <button data-tool="rotate">Xoay<kbd>2</kbd></button>
+     <button data-tool="move">Di chuyển<kbd>3</kbd></button>
+     <button data-tool="scale">Co giãn<kbd>4</kbd></button>
+     <button data-tool="ik">IK<kbd>8</kbd></button>
+    </div>
+    <div class="seg" id="axisSeg" role="group" aria-label="Trục">
+     <button data-axis="x">X</button><button data-axis="y">Y</button><button data-axis="z">Z</button>
+    </div>
+    <div class="seg" id="camSeg" role="group" aria-label="Chế độ camera">
+     <button data-cam="orbit">Xoay quanh<kbd>5</kbd></button>
+     <button data-cam="pan">Kéo<kbd>6</kbd></button>
+     <button data-cam="fly">Bay<kbd>7</kbd></button>
+     <button id="homeCamera" title="Góc nhìn mặc định (H)">⌂</button>
+    </div>
+   </div>
+   <div id="labels" aria-hidden="true"></div>
+   <p id="navHint">Kéo trái để xoay quanh điểm nhìn · kéo phải hoặc Shift + kéo để dịch · cuộn để zoom</p>
+   <div hidden>
+    <select id="tool"><option value="camera">Camera</option><option value="rotate">Xoay khớp / vật thể</option><option value="move">Di chuyển nhân vật / vật thể</option><option value="scale">Co giãn vật thể</option><option value="ik">IK · kéo tay / chân</option></select>
+    <select id="cameraMode"><option value="orbit">Xoay quanh điểm</option><option value="pan">Kéo ngang / dọc</option><option value="fly">Góc nhìn tự do</option></select>
+    <select id="axis"><option value="x">Trục X</option><option value="y">Trục Y</option><option value="z">Trục Z</option></select>
+   </div>
+  </div>
+
+  <div class="timeline">
+   <div class="transport">
+    <button id="reset" class="icon" title="Về đầu (Home)">⏮</button>
+    <button id="play" class="primary" title="Phát / dừng (Space)">▶ Phát</button>
+    <span id="clock"></span>
+    <select id="speed" title="Tốc độ phát xem trước"><option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+    <label class="toggle" title="Phát lặp trong vùng keyframe đang chọn"><input id="loopSel" type="checkbox"> Lặp vùng</label>
+    <span class="spacer"></span>
+    <button id="copyPose" title="Sao chép toàn cảnh tại mốc này (C)">Sao chép</button>
+    <button id="pastePose" disabled title="Dán và lưu toàn cảnh (V)">Dán</button>
+    <button id="delKey" title="Xoá keyframe tại mốc này (Delete)">Xoá key</button>
+    <button id="allKey" class="keybtn" title="Lưu keyframe toàn cảnh (K)">◆ Lưu key</button>
+   </div>
+   <div id="notes" aria-label="Ghi chú ý đồ chuyển động"></div>
+   <div id="rail" title="Kéo trên thanh để chọn vùng · kéo dấu đỏ để dời · Alt+kéo để sao chép · chuột phải để xoá"><div id="railSel"></div><div id="dots"></div><div id="cursor"></div></div>
+   <input id="time" type="range" min="0" max="10" step=".0333" aria-label="Thanh thời gian">
+   <div class="rangebar" id="timelineTools">
+    <span id="selInfo"></span>
+    <button id="addNote" title="Thêm ghi chú ý đồ (N)">✎ Ghi chú</button>
+    <button id="pasteRange" disabled title="Sao chép vùng đang chọn tới mốc hiện tại">Sao chép vùng</button>
+    <span class="label">Co giãn ×</span><input id="scaleFactor" type="number" value="0.75" step="0.05" min="0.05" title="0.5 = nhanh gấp đôi · 2 = chậm gấp đôi"><button id="scaleRange" disabled>Áp dụng</button>
+    <button id="deleteRange" disabled>Xoá vùng</button>
+    <button id="saveClip" disabled title="Lưu vùng đang chọn của nhân vật thành chuyển động dùng lại">★ Lưu chuyển động</button>
+   </div>
+  </div>
+ </section>
+
+ <aside class="panel">
+  <div class="selhead"><div class="cap">Đang chọn</div><h3 id="selection">Camera</h3></div>
+  <nav class="tabs" role="tablist">
+   <button data-tab="edit">Chỉnh</button><button data-tab="library">Thư viện</button><button data-tab="scene">Cảnh</button><button data-tab="export">Xuất</button>
+  </nav>
+  <div class="tabbody">
+
+   <section class="tab" data-tab="edit">
+    <div class="card" id="objCard" hidden><h4>Vật thể</h4>
+     <div class="stack">
+      <label class="field">Tên<input id="objName" type="text" maxlength="60" placeholder="vd: Ghế gỗ, Cửa sắt, Thanh kiếm"></label>
+      <label class="field">Mô tả cho AI tạo video<textarea id="objDesc" rows="2" maxlength="300" placeholder="chất liệu, màu, kiểu dáng… vd: ghế gỗ sồi lưng cao, sơn nâu"></textarea></label>
+     </div>
+    </div>
+    <div class="card"><h4 id="jointCardTitle">Khớp</h4>
+     <div class="stack"><select id="jointPick" aria-label="Chọn khớp nhanh"></select><div id="inspector"></div></div>
+    </div>
+    <div class="card"><h4>Keyframe mới</h4>
+     <div class="stack">
+      <label class="field">Nội suy
+       <select id="ease"><option value="smooth">Mượt</option><option value="linear">Đều (Linear)</option><option value="easeIn">Ease In · tăng tốc</option><option value="easeOut">Ease Out · giảm tốc</option><option value="easeInOut">Ease In-Out</option><option value="strike">Lực đánh · bung mạnh cuối</option><option value="overshoot">Nảy quá đà</option><option value="hold">Giữ / cắt</option><option value="bezier">Bezier tuỳ chỉnh…</option></select>
+      </label>
+      <input id="bezier" value="0.25,0.1,0.25,1" style="display:none" aria-label="cubic-bezier x1,y1,x2,y2">
+     </div>
+    </div>
+    <div class="card" id="handCard"><h4>Bàn tay</h4>
+     <div class="stack">
+      <div class="row"><select id="handPreset" aria-label="Preset bàn tay"></select><select id="handSide" aria-label="Tay áp dụng"><option value="auto">Theo khớp chọn</option><option value="L">Tay trái</option><option value="R">Tay phải</option><option value="both">Hai tay</option></select></div>
+      <button id="applyPreset">✋ Áp dụng tại mốc này</button>
+     </div>
+    </div>
+    <div class="card"><h4>Công cụ</h4>
+     <div class="stack">
+      <label class="toggle"><input id="gizmoOn" type="checkbox" checked> Vòng xoay XYZ trên khớp</label>
+     </div>
+    </div>
+   </section>
+
+   <section class="tab" data-tab="library">
+    <div class="card"><h4>Tư thế</h4>
+     <div class="stack">
+      <select id="poseSel" aria-label="Tư thế"></select>
+      <div class="row"><button id="applyPose" class="primary">Áp dụng <kbd>P</kbd></button><button id="mirrorPose">Lật trái↔phải <kbd>M</kbd></button></div>
+      <label class="toggle"><input id="poseGround" type="checkbox" checked> Tự chạm sàn</label>
+     </div>
+    </div>
+    <div class="card"><h4>Chuyển động</h4>
+     <div class="stack">
+      <select id="motionSel" aria-label="Chuyển động"></select>
+      <div class="grid2">
+       <label class="field">Tốc độ ×<input id="mSpeed" type="number" value="1" step="0.1" min="0.1"></label>
+       <label class="field">Thời lượng (s)<input id="mDuration" type="number" step="0.1" min="0.1" placeholder="tự động"></label>
+       <label class="field" id="mDistanceL">Quãng đường (m)<input id="mDistance" type="number" value="2" step="0.1"></label>
+       <label class="field" id="mDirectionL">Hướng (°)<input id="mDirection" type="number" value="0" step="15"></label>
+       <label class="field" id="mHeightL">Độ cao (m)<input id="mHeight" type="number" value="0.4" step="0.05"></label>
+       <label class="field" id="mSideL">Bên<select id="mSide"><option value="R">Phải</option><option value="L">Trái</option></select></label>
+      </div>
+      <button id="addMotion" class="primary">＋ Thêm tại mốc này</button>
+      <p class="hint" id="motionHint">Chọn nhân vật trước. Chuyển động nối từ tư thế hiện tại, tự khoá chân và ghi chú.</p>
+     </div>
+    </div>
+   </section>
+
+   <section class="tab" data-tab="scene">
+    <div class="card"><h4>Hỗ trợ animation</h4>
+     <div class="stack">
+      <label class="toggle"><input id="ghost" type="checkbox"> Ghost frame <kbd>G</kbd></label>
+      <label class="toggle"><input id="trail" type="checkbox"> Motion trail <kbd>T</kbd></label>
+      <label class="field">Khoảng ghost trước / sau<select id="ghostGap"><option value="0.1">0,1 giây</option><option value="0.25" selected>0,25 giây</option><option value="0.5">0,5 giây</option><option value="1">1 giây</option></select></label>
+     </div>
+    </div>
+    <div class="card"><h4>Hiển thị</h4>
+     <div class="stack">
+      <label class="toggle"><input id="showOutlines" type="checkbox" checked> Viền phân biệt đối tượng</label>
+      <label class="toggle"><input id="showParts" type="checkbox" checked> Viền từng khớp, đốt ngón</label>
+      <label class="toggle"><input id="detailResolution" type="checkbox" checked> Tăng độ nét (tối đa 1,5×)</label>
+      <label class="toggle"><input id="showLabels" type="checkbox" checked> Hiện tên vật thể trên khung 3D</label>
+     </div>
+    </div>
+    <div class="card"><h4>Đối tượng trong cảnh</h4><div id="legend" aria-label="Danh sách đối tượng"></div><p class="hint" style="margin-top:4px">Bấm để chọn · đặt tên vật thể ở tab Chỉnh</p></div>
+    <div class="card"><h4>Thời gian</h4>
+     <div class="stack">
+      <div class="grid2">
+       <label class="field">Đến giây<span class="row"><input id="seek" type="number" min="0" step=".033"><button id="go">Đến</button></span></label>
+       <label class="field">Thời lượng (s)<span class="row"><input id="duration" type="number" min="1" max="600"><button id="setDuration">Đặt</button></span></label>
+      </div>
+      <label class="field">Keyframe toàn cảnh<select id="markers" size="6"></select></label>
+     </div>
+    </div>
+   </section>
+
+   <section class="tab" data-tab="export">
+    <div class="card"><h4>Dự án</h4>
+     <div class="stack">
+      <button id="restoreBackup" disabled>Khôi phục bản tự lưu</button>
+      <p id="backupStatus" class="hint">Tự lưu sau mỗi thay đổi keyframe đã chốt.</p>
+      <button id="bakeBtn">Xuất JSON chuẩn v0.11 (bake)</button>
+      <button id="agent">Xuất position.json tại mốc này</button>
+      <button id="optimizeBtn">Tối ưu JSON (chuyển động giữ nguyên)</button>
+     </div>
+    </div>
+    <div class="card"><h4>Video</h4>
+     <div class="stack">
+      <label class="field">Khung video<select id="videoSize"><option value="view">Theo khung xem</option><option value="1280x720" selected>16:9 · 1280×720</option><option value="1920x1080">16:9 · 1920×1080</option><option value="720x1280">9:16 · 720×1280</option><option value="1080x1080">1:1 · 1080×1080</option></select></label>
+      <label class="toggle"><input id="withPrompt" type="checkbox" checked> Xuất kèm prompt khi ghi video</label>
+      <button id="promptBtn">Xuất prompt video</button>
+     </div>
+    </div>
+    <div class="card"><h4>Kiểm tra</h4>
+     <div class="stack">
+      <div class="row"><button id="validateBtn">Kiểm tra chuyển động</button><button id="reportBtn">Xuất báo cáo</button></div>
+      <details id="validationBox"><summary id="validationSummary">Kết quả kiểm tra</summary><div id="validation" class="hint"></div></details>
+     </div>
+    </div>
+    <div class="card"><h4>Thông tin</h4><pre id="info"></pre></div>
+   </section>
+
+  </div>
+ </aside>
+</main>
+
+<dialog id="helpDlg">
+ <div class="dlghead"><h3>Phím tắt</h3><button id="helpClose" class="icon" title="Đóng (Esc)">✕</button></div>
+ <div class="dlgbody">
+  <h4>Công cụ</h4>
+  <div class="sc"><span>Camera / Xoay / Di chuyển / Co giãn</span><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></span></div>
+  <div class="sc"><span>IK kéo cổ tay, cổ chân, khuỷu, gối</span><span><kbd>8</kbd></span></div>
+  <div class="sc"><span>Trục xoay / di chuyển</span><span><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></span></div>
+  <div class="sc"><span>Camera: xoay quanh / kéo / bay</span><span><kbd>5</kbd> <kbd>6</kbd> <kbd>7</kbd></span></div>
+  <h4>Chọn</h4>
+  <div class="sc"><span>Đổi nhân vật</span><span><kbd>Tab</kbd> <kbd>Shift+Tab</kbd></span></div>
+  <div class="sc"><span>Khớp cha / khớp con</span><span><kbd>[</kbd> <kbd>]</kbd></span></div>
+  <div class="sc"><span>Bỏ chọn</span><span><kbd>Esc</kbd></span></div>
+  <div class="sc"><span>Đưa khớp về 0°</span><span><kbd>R</kbd></span></div>
+  <h4>Chỉnh</h4>
+  <div class="sc"><span>Chỉnh nhỏ / lớn theo trục</span><span><kbd>←→↑↓</kbd> <kbd>Shift</kbd></span></div>
+  <div class="sc"><span>Ô số X/Y/Z</span><span>gõ số · cuộn chuột</span></div>
+  <div class="sc"><span>Áp tư thế / lật trái↔phải</span><span><kbd>P</kbd> <kbd>M</kbd></span></div>
+  <div class="sc"><span>Sao chép / dán toàn cảnh</span><span><kbd>C</kbd> <kbd>V</kbd></span></div>
+  <div class="sc"><span>Hoàn tác / làm lại</span><span><kbd>Ctrl+Z</kbd> <kbd>Ctrl+Y</kbd></span></div>
+  <h4>Timeline</h4>
+  <div class="sc"><span>Phát / dừng</span><span><kbd>Space</kbd></span></div>
+  <div class="sc"><span>Lưu keyframe / xoá keyframe</span><span><kbd>K</kbd> <kbd>Delete</kbd></span></div>
+  <div class="sc"><span>Keyframe trước / sau</span><span><kbd>J</kbd> <kbd>L</kbd></span></div>
+  <div class="sc"><span>Lùi / tiến 1 frame (Shift: 1 giây)</span><span><kbd>,</kbd> <kbd>.</kbd></span></div>
+  <div class="sc"><span>Về đầu / về cuối</span><span><kbd>Home</kbd> <kbd>End</kbd></span></div>
+  <div class="sc"><span>Ghi chú ý đồ</span><span><kbd>N</kbd></span></div>
+  <div class="sc"><span>Chọn vùng / dời / sao chép key</span><span>kéo nền · kéo dấu · <kbd>Alt</kbd>+kéo</span></div>
+  <div class="sc"><span>Chọn thêm từng mốc / xoá mốc</span><span><kbd>Shift</kbd>+bấm · chuột phải</span></div>
+  <h4>Camera &amp; hiển thị</h4>
+  <div class="sc"><span>Di chuyển camera</span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <kbd>Q</kbd><kbd>E</kbd></span></div>
+  <div class="sc"><span>Góc nhìn mặc định</span><span><kbd>H</kbd></span></div>
+  <div class="sc"><span>Ghost / motion trail</span><span><kbd>G</kbd> <kbd>T</kbd></span></div>
+  <div class="sc"><span>Bảng phím tắt</span><span><kbd>?</kbd></span></div>
+ </div>
+</dialog>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module" src="./engine.js?v=0.16"></script>
+</html>

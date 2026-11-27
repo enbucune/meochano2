@@ -1,6 +1,6 @@
 // AI Motion Studio library: poses, motion clips, timeline ops, notes, prompt, agent API.
 // Pure data functions on the project JSON. Used by the UI (engine.js), the CLI and AI agents alike.
-import {ANKLE_HEIGHT as ANK,evalPose,solveTwoBone,jointLimit,cameraChannel,checkMotion,limbHit,Q as QT,APP_VERSION,SCHEMA_VERSION,JOINTS,BODY_JOINTS,HAND_PRESETS,presetAngles,fingerJoints,isPresetTrack,isContactTrack,sample,migrate,validate,optimize,fullReport,stringifyProject,evalLocal,fk,lowestPoint,contactAt,DEFAULT_CAMERA} from './core.js?v=0.13';
+import {objectName,ANKLE_HEIGHT as ANK,evalPose,solveTwoBone,solveHinge,jointLimit,cameraChannel,checkMotion,limbHit,Q as QT,APP_VERSION,SCHEMA_VERSION,JOINTS,BODY_JOINTS,HAND_PRESETS,presetAngles,fingerJoints,isPresetTrack,isContactTrack,sample,migrate,validate,optimize,fullReport,stringifyProject,evalLocal,fk,lowestPoint,contactAt,DEFAULT_CAMERA} from './core.js?v=0.16';
 
 const R=Math.PI/180;
 const snap=(p,t)=>Math.round(t*p.fps)/p.fps;
@@ -34,7 +34,7 @@ export const POSES={
 
 // Standing poses: the higher foot is brought down to the lower one's height, flat on the floor (IK, knee forward).
 function plantFeet(pose){let l={pos:[0,0,0],yaw:0,rot:{}};for(let [j,v] of Object.entries(pose.joints))l.rot[j]=v.slice();let w=fk(l),hi=w.pos.L_ankle[1]>w.pos.R_ankle[1]?'L':'R',lo=hi==='L'?'R':'L',a=w.pos[hi+'_ankle'],dy=a[1]-w.pos[lo+'_ankle'][1];if(dy<1e-4||dy>.15)return;
- let r=solveTwoBone(w,l,hi+'_hip',hi+'_knee',hi+'_ankle',[a[0],w.pos[lo+'_ankle'][1],a[2]],QT.euler(0,0,0),QT.rot(w.q.hips,[0,0,1]));if(r)for(let j in r)pose.joints[j]=r[j].map(v=>+v.toFixed(2))}
+ let r=solveHinge(w,l,hi+'_hip',hi+'_knee',hi+'_ankle',[a[0],w.pos[lo+'_ankle'][1],a[2]],QT.euler(0,0,0),QT.rot(w.q.hips,[0,0,1]),1);if(r)for(let j in r)pose.joints[j]=r[j].map(v=>+v.toFixed(2))}
 for(let n of ['stand','guard','punch','block','dodge','sit','sword_ready','sword_raise','point','wave','victory','crouch'])plantFeet(POSES[n]);
 
 // ---------------------------------------------------------------- keys / tracks primitives
@@ -84,8 +84,8 @@ const legsSwing=(front,back,frontAng,backAng,frontKnee,backKnee)=>({[front+'_hip
 // Locomotion: steps with foot contacts so planted feet never slide.
 // Locomotion: feet placed geometrically (stride, clearance arc), hips height from reach, legs solved with 2-bone IK.
 function legAngles(hipFwd,H,footFwd,footY,pitch=0){let l1=.44,l2=.44,dx=footFwd-hipFwd,dy=H-footY,D=Math.min(Math.hypot(dx,dy),l1+l2-1e-4),a1=Math.atan2(dx,dy),al=Math.acos(Math.min(1,(l1*l1+D*D-l2*l2)/(2*l1*D))),kb=Math.PI-Math.acos(Math.max(-1,Math.min(1,(l1*l1+l2*l2-D*D)/(2*l1*l2))));let hip=-(a1+al)/R,knee=kb/R;return {hip:[+hip.toFixed(2),0,0],knee:[+knee.toFixed(2),0,0],ankle:[+(-(hip+knee)+pitch).toFixed(2),0,0]}}
-function locomotion({distance=2,run=false,speed},ctx={}){let stepLen=run?1.0:.62,v=speed||(run?3.2:1.25);distance=Math.max(.2,Math.abs(distance));
- let n=Math.max(2,Math.round(distance/stepLen)),s=distance/n,T=s/v,clear=run?.13:.075,Lr=.88*.985,Hmax=.94-.012,ph=[],feet={L:ctx.feet?.L??0,R:ctx.feet?.R??0},lat={L:ctx.lat?.L??0,R:ctx.lat?.R??0},side=feet.L<=feet.R?['L','R']:['R','L'];
+function locomotion({distance=2,run=false,speed},ctx={}){let dirSign=distance<0?-1:1,stepLen=run?1.0:.62,v=speed||(run?3.2:1.25);distance=Math.max(.2,Math.abs(distance));if(dirSign<0){stepLen=.45;v=speed||.9}
+ let n=Math.max(2,Math.round(distance/stepLen)),s=dirSign*distance/n,T=Math.abs(s)/v,clear=run?.13:.075,Lr=.88*.985,Hmax=.94-.012,ph=[],feet={L:ctx.feet?.L??0,R:ctx.feet?.R??0},lat={L:ctx.lat?.L??0,R:ctx.lat?.R??0},side=(dirSign>0?feet.L<=feet.R:feet.L>=feet.R)?['L','R']:['R','L'];
  let arms=(f,amp)=>({[f+'_shoulder']:[amp,0,f==='L'?6:-6],[(f==='L'?'R':'L')+'_shoulder']:[-amp,0,f==='L'?-6:6],L_elbow:[run?-90:-18,0,0],R_elbow:[run?-90:-18,0,0]});
  let addStep=(t0,dur,f,from,to,rootFrom,rootTo,armAmp,last)=>{let b=f==='L'?'R':'L';ph.push({t:t0+.01,contact:{[f]:0}});
   for(let u of [.25,.5,.75,1]){let e=u*u*(3-2*u),fx=from+(to-from)*e,fy=ANK+(u<1?clear*Math.sin(Math.PI*u):0),r=rootFrom+(rootTo-rootFrom)*u,
@@ -94,8 +94,8 @@ function locomotion({distance=2,run=false,speed},ctx={}){let stepLen=run?1.0:.62
   ph.push({t:t0+dur,contact:{[f]:1}});feet[f]=to;lat[f]=0};
  ph.push({t:0,contact:{L:1,R:1}});let t=0,root=0;
  for(let i=0;i<n;i++){let f=side[i%2],b=side[1-i%2],to=(i+1)*s,newRoot=(to+feet[b])/2;addStep(t,T,f,feet[f],to,root,newRoot,run?45:20);t+=T;root=newRoot}
- let f=side[n%2];addStep(t,T*.8,f,feet[f],n*s,root,n*s,0,true);t+=T*.8;
- ph.push({t:t+.15,pose:full(STAND),root:{fwd:distance,up:0},ease:'easeOut'});ph.push({t:t+.17,contact:{L:0,R:0},hands:{L:'relaxed',R:'relaxed'}});
+ let f=side[n%2];addStep(t,T*.8,f,feet[f],n*s,root,(n*s+feet[side[1-n%2]])/2,0,true);t+=T*.8;
+ ph.push({t:t+.15,pose:full(STAND),root:{fwd:dirSign*distance,up:0},ease:'easeOut'});ph.push({t:t+.17,contact:{L:0,R:0},hands:{L:'relaxed',R:'relaxed'}});
  return compileClip(ph)}
 const GUARD=()=>full(P('guard'));
 export const MOTIONS={
@@ -196,9 +196,10 @@ const shot=d=>d<1.6?'close-up':d<3.2?'medium shot':d<6.5?'wide shot':'extreme wi
 const angle=e=>e>35?'high angle, looking down':e>8?'slightly high angle':e<-8?'low angle, looking up':'eye level';
 const side=a=>{a=((a%360)+360)%360;return a<22.5||a>=337.5?'from the front (+Z)':a<67.5?'from front-right':a<112.5?'from the right side (+X)':a<157.5?'from back-right':a<202.5?'from behind (−Z)':a<247.5?'from back-left':a<292.5?'from the left side (−X)':'from front-left'};
 export function makePrompt(p,{aspect='16:9',style=''}={}){let L=[],cam=p.cameraKeys?.length?p.cameraKeys:[[0,...DEFAULT_CAMERA.slice(0,3),'smooth',...DEFAULT_CAMERA.slice(3)]];
- L.push(`Reference motion clip: ${p.duration}s, ${p.fps} fps, aspect ${aspect}. Colored mannequins = characters, gray boxes = props/set. Follow the reference EXACTLY for blocking, body motion, timing and camera.`);
+ L.push(`Reference motion clip: ${p.duration}s, ${p.fps} fps, aspect ${aspect}. Colored mannequins = characters, boxes = props/set (listed by name below). Follow the reference EXACTLY for blocking, body motion, timing and camera.`);
  L.push('','CHARACTERS:');for(let c of p.characters){let l=evalLocal(p,c.id,0);L.push(`- ${c.id} (${c.color||'mannequin'}): starts at x=${l.pos[0].toFixed(2)}, z=${l.pos[2].toFixed(2)}, facing ${Math.round(l.yaw)}°.`)}
- if(p.objects?.length){L.push('','PROPS / SET:');p.objects.forEach((o,i)=>L.push(`- ${o.id||'object '+(i+1)}: box ${o.size.join('×')} m at [${o.position.join(', ')}]`))}
+ if(p.objects?.length){L.push('','PROPS / SET (each box in the reference is one of these objects):');p.objects.forEach((o,i)=>{let tr=p.tracks.filter(t=>t.actor==='@object:'+i&&t.keys.length>1),mv='';if(tr.length){let ts=tr.flatMap(t=>t.keys.map(k=>k[0])),what=[...new Set(tr.map(t=>({p:'moves',r:'rotates',s:'changes size'})[t.axis[0]]))].join(', ');mv=` — ${what} between ${Math.min(...ts).toFixed(1)}s and ${Math.max(...ts).toFixed(1)}s`}
+  L.push(`- "${objectName(o,i)}"${o.desc?`: ${o.desc}`:''} (box ${o.size.map(v=>+(+v).toFixed(2)).join('×')} m at x=${(+o.position[0]).toFixed(2)}, z=${(+o.position[2]).toFixed(2)})${mv}`)})}
  L.push('','CAMERA:');cam.forEach((k,i)=>{let prev=cam[i-1],move='';if(prev){let da=k[1]-prev[1],dd=k[3]-prev[3];move=[Math.abs(da)>5?`orbit ${da>0?'left':'right'} ${Math.abs(Math.round(da))}°`:'',dd<-.4?'push in':dd>.4?'pull out':''].filter(Boolean).join(', ')||'hold'}L.push(`- ${k[0].toFixed(1)}s: ${shot(k[3])}, ${angle(k[2])}, ${side(k[1])}${move?` (${move}, ${k[4]||'smooth'})`:''}`)});
  L.push('','ACTION BEATS:');let notes=(p.notes||[]).slice().sort((a,b)=>a.t-b.t);if(notes.length)for(let n of notes)L.push(`- ${n.t.toFixed(1)}${n.until!==undefined?'–'+n.until.toFixed(1):''}s: ${n.text}`);else L.push('- (no notes — describe the action here)');
  L.push('','RENDER:',`- Replace mannequins with the final characters; keep exact poses, contact with the ground and timing.${style?' Style: '+style+'.':''}`,'- No extra cuts, no extra characters, no text overlays.');return L.join('\n')}
@@ -210,7 +211,7 @@ export function newProject({fps=30,duration=10}={}){return {schemaVersion:SCHEMA
 export function runCommands(input,commands){let p=input?migrate(input):newProject(),ends={},results=[];let at=(c)=>{let a=c.at??0;if(typeof a==='string'){let m=/^end([+-][\d.]+)?$/.exec(a.trim());if(!m)throw Error('at không hợp lệ: '+a);a=(ends[c.actor]??0)+(m[1]?+m[1]:0)}return Math.max(0,+a)};
  commands.forEach((c,i)=>{try{let r=null,t;switch(c.op){
   case 'character':{if(p.characters.some(x=>x.id===c.id))throw Error('Trùng id '+c.id);p.characters.push({id:c.id,position:c.position||[0,0,0],yaw:c.yaw||0,color:c.color||['#65caff','#ff9865','#84ed83','#bf9aff'][p.characters.length%4]});break}
-  case 'object':p.objects=p.objects||[];p.objects.push({...(c.id?{id:c.id}:{}),position:c.position||[0,.5,0],size:c.size||[1,1,1],color:c.color||'#64748b'});r=p.objects.length-1;break;
+  case 'object':p.objects=p.objects||[];p.objects.push({...(c.id?{id:c.id}:{}),name:(c.name||c.id||`Vật thể ${p.objects.length+1}`),...(c.desc?{desc:c.desc}:{}),position:c.position||[0,.5,0],size:c.size||[1,1,1],color:c.color||'#64748b'});r=p.objects.length-1;break;
   case 'duration':p.duration=c.value;break;case 'fps':p.fps=c.value;break;
   case 'pose':t=at(c);applyPose(p,c.actor,c.name,t,{ease:c.ease||'smooth',ground:c.ground!==false});ends[c.actor]=t;break;
   case 'joints':t=at(c);applyJoints(p,c.actor,t,c.joints,{ease:c.ease||'smooth',ground:c.ground===true,hands:c.hands});ends[c.actor]=t;break;
@@ -257,9 +258,10 @@ const CHAINS={L_foot:['L_hip','L_knee','L_ankle'],R_foot:['R_hip','R_knee','R_an
 // Legs: knee bends forward; hips lean automatically if the hip would leave its range. hold: also keep the pose until t+hold.
 export function reach(p,actor,limb,target,t,{stop=0,ease='smooth',hold=0,lean=true}={}){let ch=CHAINS[limb];if(!ch)throw Error('limb phải là '+Object.keys(CHAINS).join('/'));let leg=limb.endsWith('foot'),side=limb[0];t=snap(p,t);
  let solveAt=tt=>{let l=evalPose(p,actor,tt),w=fk(l),goal=targetPoint(p,target,t),root=w.pos[ch[0]],dir=V3n([goal[0]-root[0],goal[1]-root[1],goal[2]-root[2]]);goal=goal.map((v,i)=>v-dir[i]*stop);
-  let r=solveTwoBone(w,l,ch[0],ch[1],ch[2],goal,null,leg?QT.rot(w.q.hips,[0,0,1]):null);return {r,goal}};
- let leanZ=0,res,prevOver=Infinity;for(let pass=0;pass<4;pass++){res=solveAt(t);if(!res.r)throw Error('IK không giải được');if(!leg||!lean)break;let hz=res.r[ch[0]][2],lim=jointLimit(ch[0],'z'),over=hz<lim[0]+5?hz-(lim[0]+5):hz>lim[1]-5?hz-(lim[1]-5):0;if(Math.abs(over)<.5||Math.abs(over)>=prevOver-.5||Math.abs(leanZ)>=35)break;prevOver=Math.abs(over);leanZ=Math.max(-35,Math.min(35,leanZ+over));writeRot(p,actor,'hips',t,[...(evalLocal(p,actor,t).rot.hips||[0,0,0]).slice(0,2),leanZ],ease)}
+  let pole=leg?QT.rot(w.q.hips,[0,0,1]):QT.rot(w.q.chest,[0,-.6,-1]);let r=solveHinge(w,l,ch[0],ch[1],ch[2],goal,null,pole,leg?1:-1);return {r,goal}};
+ let tBack=snap(p,t+hold+.25),hipsBack=(evalLocal(p,actor,tBack).rot.hips||[0,0,0]).slice(),leanZ=0,res,prevOver=Infinity;for(let pass=0;pass<4;pass++){res=solveAt(t);if(!res.r)throw Error('IK không giải được');if(!leg||!lean)break;let hz=res.r[ch[0]][2],lim=jointLimit(ch[0],'z'),over=hz<lim[0]+5?hz-(lim[0]+5):hz>lim[1]-5?hz-(lim[1]-5):0;if(Math.abs(over)<.5||Math.abs(over)>=prevOver-.5||Math.abs(leanZ)>=35)break;prevOver=Math.abs(over);leanZ=Math.max(-35,Math.min(35,leanZ+over));writeRot(p,actor,'hips',t,[...(evalLocal(p,actor,t).rot.hips||[0,0,0]).slice(0,2),leanZ],ease)}
  for(let tt of hold?[t,t+hold]:[t]){if(tt!==t){if(leanZ)writeRot(p,actor,'hips',tt,[...(evalLocal(p,actor,tt).rot.hips||[0,0,0]).slice(0,2),leanZ],'linear')}for(let j of [ch[0],ch[1]])writeRot(p,actor,j,tt,res.r[j],tt===t?ease:'linear')}
+ if(leanZ)writeRot(p,actor,'hips',tBack,hipsBack,'easeInOut');/* lean is released after the contact */
  let got=worldAt(p,actor,t).pos[ch[2]],err=Math.hypot(...got.map((v,i)=>v-res.goal[i]));return {reached:err<.02,error:+err.toFixed(3),hipsLean:+leanZ.toFixed(2)}}
 const V3n=a=>{let l=Math.hypot(...a)||1;return a.map(v=>v/l)};
 // Walk (or run) so the actor ends `distance` m (hips to hips) from the target, then face it.

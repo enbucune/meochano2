@@ -76,7 +76,8 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "Mã cũ (tuỳ chọn); hiển thị dùng name."
           },
           "position": {
             "$ref": "#/$defs/vec3"
@@ -86,6 +87,15 @@
           },
           "color": {
             "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Tên vật thể cho người và AI (vd \"Ghế gỗ\", \"Cửa sắt\"). Luôn có khi xuất; file cũ không có thì lấy từ id hoặc \"Vật thể N\"."
+          },
+          "desc": {
+            "type": "string",
+            "description": "Mô tả hình dung cho AI tạo video: chất liệu, màu, kiểu dáng, công dụng (vd \"ghế gỗ sồi lưng cao, sơn nâu\")."
           }
         }
       }

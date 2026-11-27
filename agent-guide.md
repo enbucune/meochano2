@@ -32,12 +32,14 @@ node ams-cli.mjs prompt project.json 16:9       # prompt cho Higgsfield / Google
 Khi cần tính toán (tìm khoảng cách, chọn chân đá…), viết script Node dùng SDK:
 
 ```js
-const L = await import('./library.js?v=0.13'), C = await import('./core.js?v=0.13');
+const L = await import('./library.js?v=0.16'), C = await import('./core.js?v=0.16');
 let {project:p, results} = L.runCommands(null, [ /* lệnh */ ]);   // results[i].ok / .error / .start / .end
 L.worldAt(p,'A',t).pos.R_wrist   // toạ độ thế giới của một khớp
 L.inspect(p,t)                   // ảnh chụp nhanh cho agent
 C.fullReport(p)                  // validator + kiểm tra chuyển động
 ```
+
+⚠ `runCommands(p, cmds)` **trả về project mới** (`r.project`) và không sửa `p`. Luôn gán lại: `p = L.runCommands(p, cmds).project`. Nếu quên, lệnh sẽ âm thầm không có tác dụng. Các hàm trực tiếp như `L.reach`, `L.allowContact`, `L.setKey` thì sửa ngay trên `p`.
 
 Trong trình duyệt có sẵn `window.ams.run([...])`, `ams.inspect(t)`, `ams.report()`, `ams.bake()`, `ams.prompt()`. Các lệnh này dùng chung JSON với web.
 
@@ -63,7 +65,7 @@ Trong trình duyệt có sẵn `window.ams.run([...])`, `ams.inspect(t)`, `ams.r
 ```json
 {"schemaVersion":2,"app":"0.13","fps":30,"duration":10,
  "characters":[{"id":"A","position":[0,0,0],"yaw":90,"color":"#65caff"}],
- "objects":[{"id":"Ghe","position":[1,0.25,0],"size":[0.5,0.5,0.5]}],
+ "objects":[{"name":"Ghế gỗ","desc":"ghế gỗ sồi lưng cao, sơn nâu","position":[1,0.25,0],"size":[0.5,0.5,0.5]}],
  "tracks":[
   {"actor":"A","joint":"R_shoulder","axis":"x","keys":[[0,0],[1,-90,"easeOut"]]},
   {"actor":"A","joint":"$root","axis":"yaw","keys":[[0,90]]},
@@ -79,6 +81,7 @@ Trong trình duyệt có sẵn `window.ams.run([...])`, `ams.inspect(t)`, `ams.r
 - Key có dạng `[t, giá trị, ease?]`. Ease thuộc về đoạn **kết thúc tại** key đó. Trước key đầu giữ giá trị key đầu; sau key cuối giữ giá trị key cuối.
 - Ease hợp lệ: `smooth` (mặc định), `linear`, `easeIn`, `easeOut`, `easeInOut`, `hold`, `strike` (tăng tốc dồn vào cú chạm), `overshoot` (nảy quá đà), `cubic-bezier(x1,y1,x2,y2)`.
 - Vật thể dùng actor `@object:<chỉ số>` (có `@`), joint `$root`, axis `px py pz rx ry rz sx sy sz`.
+- **Mỗi vật thể phải có `name`** (tên ngắn, duy nhất, ví dụ "Ghế gỗ", "Cửa sắt") và nên có `desc` (mô tả hình dung: chất liệu, màu, kiểu dáng). Prompt video dùng hai trường này để AI tạo video biết mỗi khối hộp là gì. Track vẫn tham chiếu vật thể theo chỉ số, nên đổi tên không làm hỏng chuyển động.
 - Contact: `1` là chân chạm đất (khoá vị trí và hướng); `2` là xoay trên mũi chân (khoá vị trí, bàn chân xoay theo); `0` là nhấc chân. Khi thân xoay quá 15–40° lúc chân đang khoá, engine tự chuyển sang xoay mũi chân. Nhân vật có contact thì bàn chân không bao giờ lún xuống sàn.
 - Camera key: `[t, azimuth, elevation, distance, ease, targetX, targetY, targetZ]`.
   - Azimuth 0 là nhìn từ +Z.
@@ -92,7 +95,7 @@ Trong trình duyệt có sẵn `window.ams.run([...])`, `ams.inspect(t)`, `ams.r
 
 | op | Tham số chính | Việc làm |
 |---|---|---|
-| `character` / `object` | id, position, yaw, color / position, size | Tạo nhân vật / vật thể |
+| `character` / `object` | id, position, yaw, color / **name, desc**, position, size, color | Tạo nhân vật / vật thể (vật thể luôn đặt tên + mô tả) |
 | `pose` | actor, name, at, ease, ground=true | Đặt tư thế thư viện; tự hạ cho chạm sàn |
 | `motion` | actor, name, at, speed, duration, distance, direction, height, side, note | Chèn chuyển động; tự khoá chân và tự thêm ghi chú |
 | `approach` | actor, target, at, distance=0.9, run | Đi/chạy tới cách mục tiêu `distance` m (tính hông-hông), rồi quay mặt về mục tiêu |
@@ -111,7 +114,7 @@ Trong trình duyệt có sẵn `window.ams.run([...])`, `ams.inspect(t)`, `ams.r
 - `{"actor":"A","joint":"spine","offset":[0,0.08,0]}`.
 
 **Chuyển động có sẵn:**
-- `walk`, `run`: distance, direction. Có direction thì nhân vật quay tại chỗ trước rồi mới đi.
+- `walk`, `run`: distance, direction. Có direction thì nhân vật quay tại chỗ trước rồi mới đi. `walk` với distance âm là **lùi lại** mà vẫn nhìn về phía trước: dùng để giãn khoảng cách sau mỗi pha đánh.
 - `jump`: height, distance.
 - `land`.
 - `punch`, `kick`, `spin`: side.
