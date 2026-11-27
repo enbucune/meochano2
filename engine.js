@@ -1,10 +1,11 @@
 import * as T from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import {TransformControls} from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/TransformControls.js';
-import {APP_VERSION,HAND_PRESETS,presetAngles,presetChannels,isPresetTrack,fingerJoints,sample,migrate,validate,optimize,stringifyProject,actorTracks,footLock,fullReport,RIG,objectName,attachAt} from './core.js?v=0.20';
-import {POSES,MOTIONS,listMotions,applyPose,mirrorPose,applyMotion,extractClip,moveKeys,scaleRange,deleteFrames,addNote,makePrompt,runCommands,catalog,inspect,bakeProject,addObject,removeObject,duplicateObject,makeAiBrief,stringifyBrief,grabObject,releaseObject,dropObject,snapToHand,propHolds,HOLD_JOINTS,newLibrary,normLibrary,libPut,mergeLibrary,capturePose,useLibMotion} from './library.js?v=0.20';
+import {APP_VERSION,HAND_PRESETS,presetAngles,presetChannels,isPresetTrack,fingerJoints,sample,migrate,validate,optimize,stringifyProject,actorTracks,footLock,fullReport,RIG,objectName,attachAt,fk,evalPose,V,propTransform} from './core.js?v=0.23';
+import {makeBVH,makeGLB,makeFlowPack,zipStore,poseKeypoints,drawOpenPose,cameraAt,frameTimes} from './exporters.js?v=0.23';
+import {POSES,MOTIONS,listMotions,applyPose,mirrorPose,applyMotion,extractClip,moveKeys,scaleRange,deleteFrames,addNote,makePrompt,runCommands,catalog,inspect,bakeProject,addObject,removeObject,duplicateObject,makeAiBrief,stringifyBrief,grabObject,releaseObject,dropObject,snapToHand,propHolds,HOLD_JOINTS,newLibrary,normLibrary,libPut,mergeLibrary,capturePose,useLibMotion} from './library.js?v=0.23';
 const $=id=>document.getElementById(id), rad=Math.PI/180;
 const scene=new T.Scene();scene.background=new T.Color(0x182332);const grid=new T.GridHelper(12,24);scene.add(grid);const renderer=new T.WebGLRenderer({antialias:false,preserveDrawingBuffer:true});renderer.setPixelRatio(1);$('view').append(renderer.domElement);const camera=new T.PerspectiveCamera(42,1,.05,100);
-const sphere=new T.SphereGeometry(1,8,6), cylinder=new T.CylinderGeometry(1,1,1,6), cube=new T.BoxGeometry(1,1,1);let project, actors=[], props=[], time=0, playing=false, az=0, recording=false;
+const sphere=new T.SphereGeometry(1,14,10), cylinder=new T.CylinderGeometry(1,1,1,10), cube=new T.BoxGeometry(1,1,1);let project, actors=[], props=[], time=0, playing=false, az=0, recording=false;
 function mesh(geo,mat,parent,x,y,z,sx,sy,sz){let m=new T.Mesh(geo,mat);m.position.set(x,y,z);m.scale.set(sx,sy,sz);parent.add(m);return m}
 function actor(spec){let root=new T.Group();scene.add(root);root.position.fromArray(spec.position);root.rotation.y=(spec.yaw||0)*rad;let joints={},mat=new T.MeshBasicMaterial({color:spec.color});
  // Subtle alternating tints keep the character identity while distinguishing adjacent digits.
@@ -15,7 +16,7 @@ function actor(spec){let root=new T.Group();scene.add(root);root.position.fromAr
 // Screen-space object contours: shared mask pass (no added pickable geometry).
 const outlinePalette=['#48ddff','#ff9d55','#84ed83','#bf9aff','#ff83c8','#a5c9ff','#f2ed78','#63e7bd','#ffb7a0','#a6a8ff','#d7ec9f','#eb9aff'];
 const outlineColor=i=>outlinePalette[i%outlinePalette.length];
-const colorRT=new T.WebGLRenderTarget(1,1,{minFilter:T.NearestFilter,magFilter:T.NearestFilter,generateMipmaps:false});
+const colorRT=new T.WebGLRenderTarget(1,1,{minFilter:T.NearestFilter,magFilter:T.NearestFilter,generateMipmaps:false,colorSpace:T.SRGBColorSpace});
 const maskRT=new T.WebGLRenderTarget(1,1,{minFilter:T.NearestFilter,magFilter:T.NearestFilter,generateMipmaps:false});
 const maskMaterials=new Map(), maskBackground=new T.Color(0x000000);
 let outlineEntries=[], edgeEntries=[];
@@ -112,8 +113,8 @@ function pick(e){let hit=pickRay(e),r=canvas.getBoundingClientRect(),mx=e.client
  if(best&&bd<=(hit?10:18)&&hit?.kind!=='object')return {kind:'joint',actor:best.a.spec.id,name:best.name,g:best.g,label:best.a.spec.id+' / '+best.name};return hit}
 function pickRay(e){let r=canvas.getBoundingClientRect();pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(pointer,camera);let hits=ray.intersectObjects([...actors.map(a=>a.root),...props],true);if(!hits.length)return null;let o=hits[0].object;for(let i=0;i<props.length;i++)if(o===props[i])return {kind:'object',index:i,g:o,label:objectName(project.objects[i],i)};for(let a of actors){let hitName=o.userData.joint,hitJoint=a.joints[hitName];if(hitJoint){for(let g=o;g;g=g.parent)if(g===a.root)return {kind:'joint',actor:a.spec.id,name:hitName,g:hitJoint,label:a.spec.id+' / '+hitName}}for(let g=o;g;g=g.parent){if(g===a.root)return {kind:'actor',actor:a.spec.id,g,label:a.spec.id};for(let [name,j] of Object.entries(a.joints))if(g===j)return {kind:'joint',actor:a.spec.id,name,g,label:a.spec.id+' / '+name}}}return null}
 let drag=null;canvas.style.touchAction='none';canvas.oncontextmenu=e=>e.preventDefault();canvas.onpointerdown=e=>{if(!project||recording)return;if(gizmo.object&&gizmo.axis)return;e.preventDefault();document.activeElement?.blur?.();playing=false;let mode=$('tool').value;if(mode!=='camera'&&e.button===0){let s=pick(e);if(s){if(mode==='ik')s=ikSelection(s);if(mode==='move'&&s.kind==='joint'){let a=actors.find(a=>a.spec.id===s.actor);s={kind:'actor',actor:s.actor,g:a.root,label:s.actor}}select(s)}else select(null)}else if(mode==='camera')select(null);drag={x:e.clientX,y:e.clientY,cam:mode==='camera'||e.button!==0||!selected,pan:e.button===2||e.button===1||e.shiftKey||$('cameraMode').value==='pan'};if(mode==='ik'&&!drag.cam&&selected){drag.ik=beginIK(selected,e);if(!drag.ik){$('status').textContent='IK: chọn bàn tay, bàn chân, khuỷu hoặc gối';drag=null;return}}canvas.setPointerCapture(e.pointerId)};canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
-canvas.onpointermove=e=>{if(!drag)return;let dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;if(drag.cam){let state=cameraForEdit();if(drag.pan)panCamera(state,dx,dy,canvas.clientHeight);else turnCamera(state,dx,dy,$('cameraMode').value==='fly');draw()}else if(drag.ik){moveIK(drag.ik,e);draw()}else if(selected){let g=selected.g,mode=$('tool').value;if(mode==='move'){let v=new T.Vector3().setFromMatrixColumn(camera.matrixWorld,0).multiplyScalar(dx*.008).addScaledVector(new T.Vector3().setFromMatrixColumn(camera.matrixWorld,1),-dy*.008);g.position.add(v)}else if(mode==='scale'&&selected.kind==='object'){g.scale.multiplyScalar(Math.exp(-dy*.01))}else{let axis=$('axis').value;if(selected.kind==='actor')axis='y';g.rotation[axis]+=(dx-dy)*.012}draft.set(g,{p:g.position.clone(),r:g.rotation.clone(),s:g.scale.clone()})}};
-canvas.addEventListener('wheel',e=>{if(!project||recording)return;e.preventDefault();let state=cameraForEdit(),delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?canvas.clientHeight:1);delta=Math.max(-300,Math.min(300,delta));if($('cameraMode').value==='fly'){translateCamera(state,cameraBasis(state).back,delta*.003*Math.max(1,state[2]))}else state[2]=Math.max(.15,Math.min(80,state[2]*Math.exp(delta*.0015)));draw()},{passive:false});
+canvas.onpointermove=e=>{if(!drag)return;let dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;if(drag.cam){let state=cameraForEdit();if(drag.pan)panCamera(state,dx,dy,canvas.clientHeight);else turnCamera(state,dx,dy,$('cameraMode').value==='fly');invalidate()}else if(drag.ik){moveIK(drag.ik,e);invalidate()}else if(selected){let g=selected.g,mode=$('tool').value;if(mode==='move'){let v=new T.Vector3().setFromMatrixColumn(camera.matrixWorld,0).multiplyScalar(dx*.008).addScaledVector(new T.Vector3().setFromMatrixColumn(camera.matrixWorld,1),-dy*.008);g.position.add(v)}else if(mode==='scale'&&selected.kind==='object'){g.scale.multiplyScalar(Math.exp(-dy*.01))}else{let axis=$('axis').value;if(selected.kind==='actor')axis='y';g.rotation[axis]+=(dx-dy)*.012}draft.set(g,{p:g.position.clone(),r:g.rotation.clone(),s:g.scale.clone()})}};
+canvas.addEventListener('wheel',e=>{if(!project||recording)return;e.preventDefault();let state=cameraForEdit(),delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?canvas.clientHeight:1);delta=Math.max(-300,Math.min(300,delta));if($('cameraMode').value==='fly'){translateCamera(state,cameraBasis(state).back,delta*.003*Math.max(1,state[2]))}else state[2]=Math.max(.15,Math.min(80,state[2]*Math.exp(delta*.0015)));invalidate()},{passive:false});
 const held=new Set(),navKeys=new Set(['KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ShiftLeft','ShiftRight']);
 function editingText(e){let el=e.target;return el?.isContentEditable||el?.matches?.('textarea,select,input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=file])')}
 function togglePlay(){if(!project||recording)return;held.clear();draft.clear();camDraft=null;playing=!playing;if(playing&&time>=project.duration)time=0;draw()}
@@ -521,3 +522,126 @@ window.addEventListener('storage',e=>{if(e.key!=='ams:mylib')return;try{myLib=no
  $('jsonCheck').onclick=()=>checkJson();const _apply=$('jsonApply').onclick;$('jsonApply').onclick=()=>{let v;try{v=JSON.parse($('jsonText').value)}catch(e){return _apply()}if(jsonKind(v)!=='library')return _apply();if(checkJson()){importLib(v);jsonDirty=false;$('jsonDlg').close()}}}
 Object.assign(window.ams,{myLib:()=>JSON.parse(JSON.stringify(myLib)),ref:()=>({kind:ref.kind,name:ref.name,target:refTarget(),shown:!$('refLayer').hidden,videoTime:$('refVideo').currentTime,paused:$('refVideo').paused})});
 refreshMy();
+// ======================= v0.21: exports for every pipeline — control video MP4, Google Flow pack, glTF / BVH =======================
+let exporting=false;
+{const _d=draw;draw=function(...a){if(exporting)return;return _d.apply(this,a)}}
+const EXPORT_BTNS=['ctlBtn','flowBtn','glbBtn','bvhBtn','record'];
+function exportRange(kind){if(kind!=='sel')return [0,project.duration];let ts=selTimes();if(ts.length<2)throw Error('Chọn vùng ≥ 2 mốc trên timeline trước (hoặc chọn Phạm vi "Cả cảnh")');return [ts[0],ts.at(-1)]}
+function exportSize(){let s=VIDEO_SIZES[$('videoSize').value];if(s)return s.slice();return [Math.max(16,$('view').clientWidth&~1),Math.max(16,$('view').clientHeight&~1)]}
+const safeName=s=>String(s).replace(/[^\p{L}\p{N}_-]+/gu,'_').slice(0,40)||'x';
+async function withExport(size,fn){if(!project||recording)return;let prev=time;exporting=true;recording=true;playing=false;held.clear();draft.clear();camDraft=null;for(let id of EXPORT_BTNS)$(id).disabled=true;if(size){recordSize=size;resize()}
+ try{return await fn()}catch(e){$('status').textContent='Không xuất được: '+(e?.message||e);console.warn(e);return null}finally{if(size){recordSize=null;resize()}exporting=false;recording=false;for(let id of EXPORT_BTNS)$(id).disabled=false;time=prev;draw()}}
+function frameAt(t){time=t;evaluate();applyDraft();let st=cameraState(t);camera.position.fromArray(cameraPosition(st));camera.lookAt(...st.slice(3));camera.updateMatrixWorld(true)}
+// depth: linear camera distance, near = white
+const depthMat=new T.ShaderMaterial({uniforms:{near:{value:1},far:{value:10}},vertexShader:'varying float vz;void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);vz=-mv.z;gl_Position=projectionMatrix*mv;}',fragmentShader:'uniform float near;uniform float far;varying float vz;void main(){float d=1.0-clamp((vz-near)/(far-near),0.0,1.0);gl_FragColor=vec4(vec3(d),1.0);}'});
+const depthFloor=new T.Mesh(new T.PlaneGeometry(80,80).rotateX(-Math.PI/2),depthMat);depthFloor.raycast=()=>{};
+function depthRange(t0,t1){let mn=Infinity,mx=-Infinity,see=(q,c,f)=>{let d=V.dot(V.sub(q,c.pos),f);if(d>0){mn=Math.min(mn,d);mx=Math.max(mx,d)}};
+ for(let t of frameTimes(project,t0,t1)){let c=cameraAt(project,t),f=c.back.map(v=>-v);for(let a of project.characters){let w=fk(evalPose(project,a.id,t));for(let n of ['head','hips','L_wrist','R_wrist','L_ankle','R_ankle','L_toe2_1','R_toe2_1'])see(w.pos[n],c,f)}(project.objects||[]).forEach((o,i)=>see(propTransform(project,i,t).pos,c,f))}
+ if(!Number.isFinite(mn))return [.5,12];return [Math.max(.05,mn-.4),mx+2.5]}
+function renderDepth(){let bg=scene.background;scene.background=new T.Color(0);grid.visible=false;for(let e of edgeEntries)e.line.visible=false;scene.add(depthFloor);scene.overrideMaterial=depthMat;
+ try{renderer.setRenderTarget(null);renderer.render(scene,camera)}finally{scene.overrideMaterial=null;depthFloor.removeFromParent();grid.visible=true;scene.background=bg;for(let e of edgeEntries)e.line.visible=$('showOutlines').checked}}
+const poseCanvas=document.createElement('canvas');
+function renderPose(W,H){let ctx=poseCanvas.getContext('2d'),v=new T.Vector3(),inv=camera.matrixWorldInverse,proj=q=>{v.set(q[0],q[1],q[2]).applyMatrix4(inv);if(v.z>-camera.near)return null;v.set(q[0],q[1],q[2]).project(camera);return [(v.x+1)/2*W,(1-v.y)/2*H]};
+ drawOpenPose(ctx,project.characters.map(c=>poseKeypoints(fk(evalPose(project,c.id,time)))),proj,{width:W,height:H});return poseCanvas}
+const MODE_LABEL={mannequin:'ma-nơ-canh',pose:'khung xương OpenPose',depth:'độ sâu'};
+async function encodeVideo(mode,t0,t1,[W,H],tag=''){if(!window.isSecureContext)throw Error('xuất MP4 cần mở app qua https (GitHub Pages) hoặc localhost');if(typeof VideoEncoder==='undefined'||typeof VideoFrame==='undefined')throw Error('trình duyệt chưa hỗ trợ xuất MP4 (cần Chrome / Edge bản mới hoặc Safari 16.4+)');
+ let mod;try{mod=await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.mjs')}catch(e){throw Error('không tải được bộ ghép MP4 (cần mạng)')}
+ let fps=project.fps,bitrate=Math.max(2e6,Math.round(W*H*fps*.2)),pick=null;
+ for(let [mc,codec] of [['avc','avc1.640028'],['avc','avc1.4d0028'],['avc','avc1.42e01f'],['vp9','vp09.00.40.08'],['av1','av01.0.08M.08']]){try{let s=await VideoEncoder.isConfigSupported({codec,width:W,height:H,bitrate,framerate:fps});if(s.supported){pick=[mc,codec];break}}catch(e){}}
+ if(!pick)throw Error('không có bộ mã hoá video phù hợp với khung '+W+'×'+H);
+ let target=new mod.ArrayBufferTarget(),muxer=new mod.Muxer({target,video:{codec:pick[0],width:W,height:H,frameRate:fps},fastStart:'in-memory'}),err=null,enc=new VideoEncoder({output:(c,m)=>muxer.addVideoChunk(c,m),error:e=>err=e});
+ enc.configure({codec:pick[1],width:W,height:H,bitrate,framerate:fps,...(pick[0]==='avc'?{avc:{format:'avc'}}:{})});
+ if(mode==='depth'){let r=depthRange(t0,t1);depthMat.uniforms.near.value=r[0];depthMat.uniforms.far.value=r[1]}if(mode==='pose'){poseCanvas.width=W;poseCanvas.height=H}
+ let ts=frameTimes(project,t0,t1);for(let i=0;i<ts.length;i++){if(err)throw err;frameAt(ts[i]);let src=renderer.domElement;if(mode==='pose')src=renderPose(W,H);else if(mode==='depth')renderDepth();else renderOutlined();
+  let fr=new VideoFrame(src,{timestamp:Math.round(i*1e6/fps),duration:Math.round(1e6/fps)});enc.encode(fr,{keyFrame:i%(fps*2)===0});fr.close();
+  while(enc.encodeQueueSize>6)await new Promise(r=>setTimeout(r,2));if(i%8===0){$('status').textContent=`Đang xuất ${tag}${MODE_LABEL[mode]}: ${Math.round(i/ts.length*100)}%`;await new Promise(r=>setTimeout(r,0))}}
+ await enc.flush();if(err)throw err;enc.close();muxer.finalize();return {data:new Uint8Array(target.buffer),codec:pick[1],frames:ts.length}}
+$('ctlBtn').onclick=()=>{let mode=$('ctlMode').value,range;try{range=exportRange($('ctlRange').value)}catch(e){$('status').textContent=e.message;return}let size=exportSize();
+ withExport(size,async()=>{let [t0,t1]=range,modes=mode==='all'?['mannequin','pose','depth']:[mode],files=[],info;
+  for(let [k,m] of modes.entries()){let r=await encodeVideo(m,t0,t1,size,modes.length>1?`(${k+1}/3) `:'');files.push({name:`control-${m==='pose'?'openpose':m}.mp4`,data:r.data});info=r}
+  if(files.length>1)save(new Blob([zipStore(files)],{type:'application/zip'}),'control-videos.zip');else save(new Blob([files[0].data],{type:'video/mp4'}),files[0].name);
+  $('status').textContent=`Đã xuất ${files.map(f=>f.name).join(', ')} · ${size.join('×')} · ${info.frames} khung · ${(t1-t0).toFixed(2)}s · ${info.codec.startsWith('avc')?'H.264':info.codec}`})};
+async function pngAt(t){frameAt(t);renderOutlined();let b=await new Promise(r=>renderer.domElement.toBlob(r,'image/png'));return new Uint8Array(await b.arrayBuffer())}
+$('flowBtn').onclick=()=>{let range;try{range=exportRange($('flowRange').value)}catch(e){$('status').textContent=e.message;return}let size=exportSize();
+ withExport(size,async()=>{let fp=makeFlowPack(project,{t0:range[0],t1:range[1],seg:+$('flowSeg').value,aspect:aspectLabel()}),files=[{name:'00-HUONG-DAN.txt',data:fp.readme},{name:'prompts.txt',data:fp.text}];
+  for(let [i,f] of fp.frames.entries()){$('status').textContent=`Đang chụp khung ${i+1}/${fp.frames.length}…`;files.push({name:'khung/'+f.file,data:await pngAt(f.t)});await new Promise(r=>setTimeout(r,0))}
+  save(new Blob([zipStore(files)],{type:'application/zip'}),'flow-pack.zip');$('status').textContent=`Đã xuất flow-pack.zip · ${fp.segments.length} đoạn, ${fp.frames.length} khung ${size.join('×')} · mở 00-HUONG-DAN.txt`})};
+$('glbBtn').onclick=()=>{if(!project)return;try{let [W,H]=exportSize(),g=makeGLB(project,{aspect:W/H});save(new Blob([g],{type:'model/gltf-binary'}),'scene.glb');$('status').textContent=`Đã xuất scene.glb · ${(g.length/1024).toFixed(0)} KB · ${project.characters.length} nhân vật có xương, ${(project.objects||[]).length} vật thể, camera · Blender: File → Import → glTF 2.0`}catch(e){$('status').textContent='Không xuất được: '+e.message}};
+$('bvhBtn').onclick=()=>{if(!project)return;try{let ids=project.characters.map(c=>c.id);if(!ids.length)throw Error('cảnh chưa có nhân vật');if(ids.length===1){save(new Blob([makeBVH(project,ids[0])],{type:'text/plain'}),safeName(ids[0])+'.bvh')}else save(new Blob([zipStore(ids.map(id=>({name:safeName(id)+'.bvh',data:makeBVH(project,id)})))],{type:'application/zip'}),'bvh.zip');
+ $('status').textContent=`Đã xuất ${ids.length>1?'bvh.zip ('+ids.join(', ')+')':ids[0]+'.bvh'} · ${Math.round(project.duration*project.fps)+1} frame · Blender: File → Import → Motion Capture (.bvh)`}catch(e){$('status').textContent='Không xuất được: '+e.message}};
+Object.assign(window.ams,{glb:()=>makeGLB(project),bvh:id=>makeBVH(project,id),flow:o=>makeFlowPack(project,o)});
+// ======================= v0.22: readable graphics (toon shading, contact shadows, floor) + faster handling =======================
+// --- Vietnamese joint names (ids stay the same in JSON)
+const VN_BASE={hips:'Hông (gốc)',spine:'Lưng',chest:'Ngực',neck:'Cổ',head:'Đầu',clavicle:'Xương đòn',shoulder:'Vai',elbow:'Khuỷu tay',forearm:'Cẳng tay',wrist:'Cổ tay',hip:'Háng',knee:'Gối',ankle:'Cổ chân'},FINGER_VN=['cái','trỏ','giữa','áp út','út'];
+function jointVN(n){let m=/^([LR])_(.+)$/.exec(n),side=m?(m[1]==='L'?' trái':' phải'):'',b=m?m[2]:n,f;if(f=/^finger(\d)_(\d)$/.exec(b))return `Ngón ${FINGER_VN[+f[1]]} đốt ${+f[2]+1}${side}`;if(f=/^toe(\d)_(\d)$/.exec(b))return `Ngón chân ${+f[1]+1} đốt ${+f[2]+1}${side}`;return (VN_BASE[b]||b)+side}
+{const _sp=syncPicker;syncPicker=function(...a){let r=_sp.apply(this,a);for(let o of $('jointPick').options)if(o.value&&o.value!=='$root'&&o.textContent===o.value)o.textContent=`${jointVN(o.value)} · ${o.value}`;return r}}
+{const cap=document.querySelector('.selhead .cap'),_sel=select;select=function(s,...a){let r=_sel.call(this,s,...a);cap.textContent=s?.kind==='joint'?'Đang chọn · '+jointVN(s.name):'Đang chọn';$('selection').title=$('selection').textContent;markOwnKeys();return r}}
+syncPicker();
+let hover=null,hoverEv=null,hoverRaf=0;
+// --- lights + toon materials (3 tones), light follows the camera so every angle reads well
+const hemi=new T.HemisphereLight(0xffffff,0x8c93a0,.62*Math.PI),keyLight=new T.DirectionalLight(0xffffff,.48*Math.PI);scene.add(hemi,keyLight);
+const toonGrad=new T.DataTexture(new Uint8Array([70,160,255]),3,1,T.RedFormat);toonGrad.minFilter=toonGrad.magFilter=T.NearestFilter;toonGrad.generateMipmaps=false;toonGrad.needsUpdate=true;
+scene.fog=new T.Fog(0x182332,13,40);
+function applyShading(){let on=$('shade').checked,cache=new Map(),conv=m=>{if(!m)return m;if(on){if(!m.isMeshBasicMaterial)return m;if(!cache.has(m)){let t=new T.MeshToonMaterial({color:m.color.clone(),gradientMap:toonGrad,transparent:m.transparent,opacity:m.opacity});t.userData.basic=m;cache.set(m,t)}return cache.get(m)}return m.userData?.basic||m};
+ for(let a of actors)a.root.traverse(o=>{if(o.isMesh)o.material=conv(o.material)});for(let o of props)o.material=conv(o.material)}
+// --- floor, contact shadows, hover ring, IK handles: children of the grid so the outline mask pass and depth export skip them
+const fx=new T.Group();grid.add(fx);
+const floorMesh=new T.Mesh(new T.PlaneGeometry(200,200).rotateX(-Math.PI/2),new T.MeshBasicMaterial({color:0x1d2b3d}));floorMesh.position.y=-.004;floorMesh.raycast=()=>{};fx.add(floorMesh);
+const blobTex=(()=>{let c=document.createElement('canvas');c.width=c.height=64;let g=c.getContext('2d'),r=g.createRadialGradient(32,32,2,32,32,31);r.addColorStop(0,'rgba(0,0,0,1)');r.addColorStop(.55,'rgba(0,0,0,.55)');r.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=r;g.fillRect(0,0,64,64);let t=new T.CanvasTexture(c);t.colorSpace=T.SRGBColorSpace;return t})();
+const blobGeo=new T.PlaneGeometry(1,1).rotateX(-Math.PI/2);let blobs=[];
+function blob(){let m=new T.Mesh(blobGeo,new T.MeshBasicMaterial({map:blobTex,color:0x000000,transparent:true,depthWrite:false,fog:false}));m.raycast=()=>{};m.renderOrder=1;fx.add(m);blobs.push(m);return m}
+function buildFx(){for(let m of blobs){m.removeFromParent();m.material.dispose()}blobs=[];for(let a of actors)a.fx={L:blob(),R:blob(),hips:blob()};props.forEach(o=>o.userData.blob=blob())}
+const tv=new T.Vector3(),tw=new T.Vector3(),tq=new T.Quaternion(),box=new T.Box3();
+function updateShadows(){let on=$('floorFx').checked;floorMesh.visible=on;for(let m of blobs)m.visible=on;if(!on)return;
+ for(let a of actors){if(!a.fx)continue;a.root.updateMatrixWorld(true);for(let s of ['L','R']){let g=a.joints[s+'_ankle'],m=a.fx[s];g.localToWorld(tv.set(0,-.025,.07));g.localToWorld(tw.set(0,-.025,.3));let sole=tv.y-.03,h=Math.max(0,sole),k=1+h*1.6,contact=sole<.015;
+   m.position.set(tv.x,.003,tv.z);m.rotation.set(0,Math.atan2(tw.x-tv.x,tw.z-tv.z),0);m.scale.set(.2*k,1,.34*k);m.material.opacity=contact?.62:.42*Math.max(0,1-h/.9)}
+  let hp=a.joints.hips.getWorldPosition(tv),hm=a.fx.hips;hm.position.set(hp.x,.002,hp.z);hm.scale.set(.75,1,.75);hm.material.opacity=.2*Math.max(0,Math.min(1,(2-hp.y)/1.1))}
+ props.forEach(o=>{let m=o.userData.blob;if(!m)return;box.setFromObject(o);let sx=box.max.x-box.min.x,sz=box.max.z-box.min.z,low=Math.max(0,box.min.y);m.position.set((box.min.x+box.max.x)/2,.002,(box.min.z+box.max.z)/2);m.rotation.set(0,0,0);m.scale.set(sx*1.25+.05,1,sz*1.25+.05);m.material.opacity=.45*Math.max(0,1-low/1.2)})}
+const ringGeo=new T.RingGeometry(.78,1,28),hoverRing=new T.Mesh(ringGeo,new T.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.95,depthTest:false,depthWrite:false,fog:false}));hoverRing.renderOrder=999;hoverRing.raycast=()=>{};hoverRing.visible=false;fx.add(hoverRing);
+const IK_JOINTS=['L_wrist','R_wrist','L_ankle','R_ankle','L_elbow','R_elbow','L_knee','R_knee'],ikMatMain=new T.MeshBasicMaterial({color:0xffd166,transparent:true,opacity:.9,depthTest:false,depthWrite:false,fog:false}),ikMatPole=new T.MeshBasicMaterial({color:0x7ee0ff,transparent:true,opacity:.85,depthTest:false,depthWrite:false,fog:false});let ikRings=[];
+function updateOverlays(){let ik=$('tool').value==='ik'&&!recording;while(ikRings.length<actors.length*IK_JOINTS.length){let m=new T.Mesh(ringGeo,ikRings.length%IK_JOINTS.length<4?ikMatMain:ikMatPole);m.renderOrder=998;m.raycast=()=>{};fx.add(m);ikRings.push(m)}
+ ikRings.forEach((m,i)=>{let a=actors[Math.floor(i/IK_JOINTS.length)],j=IK_JOINTS[i%IK_JOINTS.length];m.visible=ik&&!!a;if(!m.visible)return;a.joints[j].getWorldPosition(m.position);m.quaternion.copy(camera.quaternion);let main=i%IK_JOINTS.length<4,d=camera.position.distanceTo(m.position);m.scale.setScalar((main?.022:.016)*d)});
+ let h=hover?.g;hoverRing.visible=!!h&&!recording&&!drag;if(hoverRing.visible){h.getWorldPosition(hoverRing.position);hoverRing.quaternion.copy(camera.quaternion);let d=camera.position.distanceTo(hoverRing.position);hoverRing.scale.setScalar((hover.kind==='joint'?(/_(finger|toe)\d/.test(hover.name)?.008:.014):.03)*d)}}
+{const _ro=renderOutlined;renderOutlined=function(...a){keyLight.position.set(-.55,.8,.65).applyQuaternion(camera.quaternion);try{updateShadows();updateOverlays()}catch(e){}return _ro.apply(this,a)}}
+{const _init=initOutlines;initOutlines=function(...a){applyShading();buildFx();return _init.apply(this,a)}}
+for(let [id,key] of [['shade','shade'],['floorFx','floorFx']]){let v=pref(key);if(v!==null)$(id).checked=v==='1';$(id).addEventListener('change',()=>{pref(key,$(id).checked?'1':'0');if(!project)return;if(id==='shade'){clearOutlines();initOutlines()}draw()})}
+if(project){clearOutlines();initOutlines();draw()}
+// --- hover: highlight the joint / object under the mouse + its name
+function hoverLabel(s){if(s.kind==='joint'){let c=project.characters.find(c=>c.id===s.actor);return `${s.actor}${c?.name?' · '+c.name:''} — ${jointVN(s.name)}`}return s.label}
+canvas.addEventListener('pointermove',e=>{if(drag||!project||recording||e.buttons)return;hoverEv=e;if(hoverRaf)return;hoverRaf=requestAnimationFrame(()=>{hoverRaf=0;let ev=hoverEv,mode=$('tool').value,s=null;if(!(gizmo.object&&gizmo.axis)){s=pick(ev);if(s&&mode==='ik')s=ikSelection(s);if(s&&mode==='move'&&s.kind==='joint')s={kind:'actor',actor:s.actor,g:actors.find(a=>a.spec.id===s.actor).root,label:s.actor}}
+ let key=s?[s.kind,s.actor,s.name,s.index].join('|'):'';if(key!==(hover?[hover.kind,hover.actor,hover.name,hover.index].join('|'):'')){hover=s;invalidate()}let tip=$('hoverTip');canvas.style.cursor=s?'pointer':'';if(s){let r=canvas.getBoundingClientRect();tip.textContent=hoverLabel(s);tip.style.left=(ev.clientX-r.left)+'px';tip.style.top=(ev.clientY-r.top)+'px';tip.hidden=false}else tip.hidden=true})});
+canvas.addEventListener('pointerleave',()=>{if(hover){hover=null;invalidate()}$('hoverTip').hidden=true;canvas.style.cursor=''});
+canvas.addEventListener('pointerdown',()=>{$('hoverTip').hidden=true},true);
+// --- timeline: second ticks + keys of the selected character / object stand out
+function renderTicks(){let el=$('ticks');if(!project)return;let d=project.duration;if(el.dataset.d===String(d))return;el.dataset.d=d;el.replaceChildren();let minor=d<=4?.25:d<=12?.5:1,major=d<=20?1:5;
+ for(let t=minor;t<d-1e-6;t+=minor){let i=document.createElement('i'),isMajor=Math.abs(t/major-Math.round(t/major))<1e-6;i.style.left=(t/d*100)+'%';if(isMajor){i.className='major';let b=document.createElement('b');b.textContent=Math.round(t)+'s';b.style.left=(t/d*100)+'%';el.append(b)}el.append(i)}}
+function markOwnKeys(){if(!project)return;let s=selected,own=null;if(s?.actor){own=new Set();for(let tr of project.tracks)if(tr.actor===s.actor)for(let k of tr.keys)own.add(frameOf(k[0]))}else if(s?.kind==='object'){own=new Set();for(let tr of project.tracks)if(tr.actor==='@object:'+s.index)for(let k of tr.keys)own.add(frameOf(k[0]))}
+ for(let [f,b] of markerButtons)b.classList.toggle('dim',!!own&&!own.has(f))}
+{const _rm=refreshMarkers;refreshMarkers=function(...a){let r=_rm.apply(this,a);renderTicks();markOwnKeys();return r}}
+refreshMarkers();
+// --- F: frame the selection (nothing selected → whole scene)
+function frameSelected(){if(!project||recording)return;playing=false;let st=(camDraft||cameraState()).slice(),c=new T.Vector3(),d;
+ if(selected?.kind==='joint'){selected.g.getWorldPosition(c);d=/finger|wrist|toe|ankle/.test(selected.name)?1.3:1.9}
+ else if(selected?.kind==='actor'){box.setFromObject(selected.g);box.getCenter(c);d=3.4}
+ else if(selected?.kind==='object'){box.setFromObject(selected.g);box.getCenter(c);d=Math.max(1.4,box.getSize(tv).length()*2.2)}
+ else{box.makeEmpty();for(let a of actors)box.expandByObject(a.root);for(let o of props)box.expandByObject(o);if(box.isEmpty())return;box.getCenter(c);d=Math.max(2.5,box.getSize(tv).length()*1.25)}
+ camDraft=[st[0],st[1],+d.toFixed(3),+c.x.toFixed(3),+c.y.toFixed(3),+c.z.toFixed(3)];draw();$('status').textContent='F · camera nhìn vào '+(selected?selected.label:'cả cảnh')+' (Auto-key sẽ lưu góc máy khi chỉnh tiếp · H về góc mặc định)'}
+window.addEventListener('keydown',e=>{if(e.code!=='KeyF'||!project||recording||editingText(e)||e.ctrlKey||e.metaKey||e.altKey||$('helpDlg').open||$('jsonDlg').open)return;e.preventDefault();if(!e.repeat)frameSelected()});
+Object.assign(window.ams,{hover:()=>hover&&{kind:hover.kind,actor:hover.actor,name:hover.name,label:$('hoverTip').textContent},frameSelected});
+// stale hover after keys / wheel / playback → clear it (the mouse has not moved over a fresh target)
+function clearHover(){if(hover){hover=null;invalidate()}$('hoverTip').hidden=true;canvas.style.cursor=''}
+window.addEventListener('keydown',clearHover,true);canvas.addEventListener('wheel',clearHover,{passive:true});{const _tp=togglePlay;togglePlay=function(...a){clearHover();return _tp.apply(this,a)}}
+// ======================= v0.23: smoother handling =======================
+// Camera tool: a plain click on a joint / object selects it and switches to Rotate (drag still orbits)
+CAM_HINT.orbit+=' · bấm khớp để chỉnh';
+{let down=null;canvas.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,b:e.button,mode:$('tool').value,shift:e.shiftKey}},true);
+ canvas.addEventListener('pointerup',e=>{let d=down;down=null;if(!d||!project||recording||d.mode!=='camera'||d.b!==0||d.shift||Math.hypot(e.clientX-d.x,e.clientY-d.y)>4)return;let s=pick(e);if(!s)return;setTool('rotate');select(s);invalidate();$('status').textContent=`Đã chọn ${s.label} · chuyển sang Xoay (2) · kéo vòng màu hoặc chữ X/Y/Z để chỉnh`},true)}
+// Wheel over the timeline steps frames (Shift = 10 frames); trackpads accumulate small deltas
+{let acc=0;const step=e=>{if(!project||recording)return;e.preventDefault();acc+=e.deltaY*(e.deltaMode===1?16:1);if(Math.abs(acc)<24)return;let n=Math.sign(acc)*(e.shiftKey?10:1);acc=0;let f=Math.round(time*project.fps)+n;seek(Math.max(0,Math.min(project.duration,f/project.fps)));$('status').textContent=`${time.toFixed(2)}s · frame ${Math.round(time*project.fps)} (lăn chuột: từng frame, Shift: 10)`};
+ for(let id of ['rail','time','notes'])$(id).addEventListener('wheel',step,{passive:false})}
+// Drag the X / Y / Z letter of a number field to scrub (½ step per px, Shift ×10, Alt ×0.1); release = auto-key
+{const _ri=renderInspector;renderInspector=function(...a){let r=_ri.apply(this,a);for(let [i,f] of inspInputs){let w=i.parentElement;if(!w||w._scrub)continue;w._scrub=true;w.title=(f.unit==='°'?'Kéo ngang để xoay':'Kéo ngang để dời')+' · Shift nhanh ×10 · Alt chậm ×0.1';
+  w.addEventListener('click',e=>{if(e.target===w)e.preventDefault()});// a click on the letter must not move focus into the field (shortcuts keep working)
+  w.addEventListener('pointerdown',e=>{if(e.target!==w||e.button!==0||!selected||recording)return;e.preventDefault();let x0=e.clientX,v0=f.get(),moved=false;w.setPointerCapture(e.pointerId);w.classList.add('scrub');playing=false;
+   const mv=ev=>{let dx=ev.clientX-x0;if(!moved&&Math.abs(dx)<2)return;moved=true;let k=ev.shiftKey?10:ev.altKey?.1:1,v=+(v0+dx*f.step*.5*k).toFixed(4);f.set(v);rememberNode(selected.g);i.value=+v.toFixed(f.unit==='°'?1:3);invalidate()};
+   const up=()=>{w.removeEventListener('pointermove',mv);w.classList.remove('scrub');if(moved)autoCommit()};w.addEventListener('pointermove',mv);w.addEventListener('pointerup',up,{once:true});w.addEventListener('pointercancel',up,{once:true})})}return r}}

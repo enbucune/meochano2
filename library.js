@@ -1,6 +1,6 @@
 // AI Motion Studio library: poses, motion clips, timeline ops, notes, prompt, agent API.
 // Pure data functions on the project JSON. Used by the UI (engine.js), the CLI and AI agents alike.
-import {SEG,segDist,attachAt,propTransform,propLowest,isAttachTrack,objectName,characterName,ANKLE_HEIGHT as ANK,evalPose,solveTwoBone,solveHinge,jointLimit,cameraChannel,checkMotion,limbHit,Q as QT,APP_VERSION,SCHEMA_VERSION,JOINTS,BODY_JOINTS,HAND_PRESETS,presetAngles,fingerJoints,isPresetTrack,isContactTrack,sample,migrate,validate,optimize,fullReport,stringifyProject,evalLocal,fk,lowestPoint,contactAt,DEFAULT_CAMERA} from './core.js?v=0.20';
+import {SEG,segDist,attachAt,propTransform,propLowest,isAttachTrack,objectName,characterName,ANKLE_HEIGHT as ANK,evalPose,solveTwoBone,solveHinge,jointLimit,cameraChannel,checkMotion,limbHit,Q as QT,APP_VERSION,SCHEMA_VERSION,JOINTS,BODY_JOINTS,HAND_PRESETS,presetAngles,fingerJoints,isPresetTrack,isContactTrack,sample,migrate,validate,optimize,fullReport,stringifyProject,evalLocal,fk,lowestPoint,contactAt,DEFAULT_CAMERA} from './core.js?v=0.23';
 
 const R=Math.PI/180;
 const snap=(p,t)=>Math.round(t*p.fps)/p.fps;
@@ -434,3 +434,4 @@ export function capturePose(p,actor,t,{rot,label}={}){let l=evalLocal(p,actor,t)
 // Copy a personal clip into the project library (so the exported JSON is self-contained). Returns the project key.
 export function useLibMotion(p,clip,name){p.library=p.library||{};p.library.motions=p.library.motions||{};let m=p.library.motions,base=String(name).trim(),n=base,i=2,body=c=>({...c,label:undefined});
  while(MOTIONS[n]||(m[n]&&!sameJSON(body(m[n]),body(clip))))n=`${base} (${i++})`;if(!m[n])m[n]={...clone(clip),label:n};return n}
+export const camWords={shot,angle,side};

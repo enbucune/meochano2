@@ -32,7 +32,7 @@ node ams-cli.mjs prompt project.json 16:9       # prompt cho Higgsfield / Google
 Khi cần tính toán (tìm khoảng cách, chọn chân đá…), viết script Node dùng SDK:
 
 ```js
-const L = await import('./library.js?v=0.20'), C = await import('./core.js?v=0.20');
+const L = await import('./library.js?v=0.23'), C = await import('./core.js?v=0.23');
 let {project:p, results} = L.runCommands(null, [ /* lệnh */ ]);   // results[i].ok / .error / .start / .end
 L.worldAt(p,'A',t).pos.R_wrist   // toạ độ thế giới của một khớp
 L.inspect(p,t)                   // ảnh chụp nhanh cho agent
@@ -165,6 +165,17 @@ Dùng lệnh `grab` / `release` / `drop` thay vì tự tính offset. Bake ra v0.
 - Người dùng lưu đòn/tư thế vào "Thư viện của anh" trên web. Đòn nào được dùng trong cảnh thì được chép nguyên vào `project.library.motions["<tên>"]` (clip tương đối: `duration`, `channels`). Ghi chú nhịp có `motion:"<tên>"`.
 - AI dùng lại đòn đó bằng `{op:"motion", actor, name:"<tên>", at, speed|duration, side:"L"}` (`side:"L"` = lật trái↔phải). Không sửa clip trong library, chỉnh keyframe sau khi chèn.
 - File `my-library.json` (`type:"ams-my-library"`) chỉ là thư viện, không phải cảnh: dán vào bảng JSON hoặc kéo thả vào web sẽ gộp vào thư viện.
+
+## 5e. Xuất cho công cụ khác (model video không đọc JSON)
+
+| Đích | Lệnh / nút | Ghi chú |
+|---|---|---|
+| Blender / Unreal / Unity | `node ams-cli.mjs glb in.json out.glb` · nút ⬇ .glb | Nhân vật có xương (skin 72 khớp), đạo cụ, camera, 1 animation; khớp JSON tuyệt đối |
+| Phần mềm mocap | `node ams-cli.mjs bvh in.json A out.bvh` · nút ⬇ .bvh | Kênh Xrotation Yrotation Zrotation = Euler XYZ của app, đơn vị mét |
+| AI video→video (Runway, Luma, Viggle, Wan…) | nút Video điều khiển (web, cần https) | MP4 đúng từng khung: ma-nơ-canh / OpenPose (COCO-18 + tay 21 điểm) / độ sâu |
+| Google Flow (chỉ nhận chữ + ảnh) | `node ams-cli.mjs flow in.json 2` · nút Gói Flow | Chia đoạn, ảnh khung đầu/cuối + prompt chữ tiếng Anh từng đoạn |
+
+Code: `exporters.js` (`makeGLB`, `makeBVH`, `makeFlowPack`, `poseKeypoints`, `describeMotion`, `zipStore`).
 
 ## 6. Đọc báo cáo kiểm tra và cách sửa
 

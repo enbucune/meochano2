@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="vi">
 <meta charset="utf-8">
-<meta name="app-version" content="0.20">
+<meta name="app-version" content="0.23">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AI Motion Studio</title>
 <style>
@@ -61,6 +61,15 @@ canvas{display:block;touch-action:none}
 textarea{font:inherit;color:var(--text);background:var(--panel3);border:1px solid var(--line);border-radius:6px;padding:6px;width:100%;resize:vertical;margin:0}
 #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 #refLayer{position:absolute;inset:0;pointer-events:none;opacity:.45}
+#hoverTip{position:absolute;pointer-events:none;background:rgba(10,16,23,.88);border:1px solid var(--line2);color:var(--text);font-size:12px;padding:2px 7px;border-radius:5px;white-space:nowrap;transform:translate(14px,10px);z-index:3}
+#ticks{position:absolute;inset:0;pointer-events:none}
+#ticks i{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.07)}
+#ticks i.major{background:rgba(255,255,255,.16)}
+#ticks b{position:absolute;bottom:1px;font:9px/1 system-ui,sans-serif;color:var(--muted);transform:translateX(3px);font-weight:400;opacity:.8}
+.dot.dim{opacity:.28}
+.insp{cursor:ew-resize;user-select:none}
+.insp input{cursor:text}
+.insp.scrub{color:var(--accent)}
 #refLayer>video,#refLayer>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none}
 #refLayer.video>video,#refLayer.image>img{display:block}
 #refLayer.flip>video,#refLayer.flip>img{transform:scaleX(-1)}
@@ -173,7 +182,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 </style>
 
 <header class="topbar">
- <div class="brand">AI Motion Studio<small>v0.20</small></div>
+ <div class="brand">AI Motion Studio<small>v0.23</small></div>
  <div class="grp">
   <label class="button" for="upload" title="Mở file project JSON">Mở</label>
   <input id="upload" type="file" accept=".json">
@@ -220,6 +229,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <div class="seg"><button id="addObj" title="Thêm vật thể mới tại điểm camera đang nhìn">＋ Vật thể</button></div>
    </div>
    <div id="labels" aria-hidden="true"></div>
+   <div id="hoverTip" hidden></div>
    <p id="navHint">Kéo trái để xoay quanh điểm nhìn · kéo phải hoặc Shift + kéo để dịch · cuộn để zoom</p>
    <div hidden>
     <select id="tool"><option value="camera">Camera</option><option value="rotate">Xoay khớp / vật thể</option><option value="move">Di chuyển nhân vật / vật thể</option><option value="scale">Co giãn vật thể</option><option value="ik">IK · kéo tay / chân</option></select>
@@ -242,7 +252,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <button id="allKey" class="keybtn" title="Lưu keyframe toàn cảnh (K)">◆ Lưu key</button>
    </div>
    <div id="notes" aria-label="Ghi chú ý đồ chuyển động"></div>
-   <div id="rail" title="Kéo trên thanh để chọn vùng · kéo dấu đỏ để dời · Alt+kéo để sao chép · chuột phải để xoá"><div id="railSel"></div><div id="dots"></div><div id="cursor"></div></div>
+   <div id="rail" title="Kéo trên thanh để chọn vùng · kéo dấu đỏ để dời · Alt+kéo để sao chép · chuột phải để xoá"><div id="ticks"></div><div id="railSel"></div><div id="dots"></div><div id="cursor"></div></div>
    <input id="time" type="range" min="0" max="10" step=".0333" aria-label="Thanh thời gian">
    <div class="rangebar" id="timelineTools">
     <span id="selInfo"></span>
@@ -370,6 +380,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     </div>
     <div class="card"><h4>Hiển thị</h4>
      <div class="stack">
+      <label class="toggle"><input id="shade" type="checkbox" checked> Tô khối sáng tối (toon)</label>
+      <label class="toggle"><input id="floorFx" type="checkbox" checked> Bóng dưới chân · nền sàn</label>
       <label class="toggle"><input id="showOutlines" type="checkbox" checked> Viền phân biệt đối tượng</label>
       <label class="toggle"><input id="showParts" type="checkbox" checked> Viền từng khớp, đốt ngón</label>
       <label class="toggle"><input id="detailResolution" type="checkbox" checked> Tăng độ nét (tối đa 1,5×)</label>
@@ -411,6 +423,32 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <label class="field">Khung video<select id="videoSize"><option value="view">Theo khung xem</option><option value="1280x720" selected>16:9 · 1280×720</option><option value="1920x1080">16:9 · 1920×1080</option><option value="720x1280">9:16 · 720×1280</option><option value="1080x1080">1:1 · 1080×1080</option></select></label>
       <label class="toggle"><input id="withPrompt" type="checkbox" checked> Xuất kèm prompt khi ghi video</label>
       <button id="promptBtn">Xuất prompt video</button>
+     </div>
+    </div>
+    <div class="card"><h4>Video điều khiển · giữ đúng chuyển động</h4>
+     <div class="stack">
+      <div class="grid2">
+       <label class="field">Kiểu<select id="ctlMode"><option value="mannequin">Ma-nơ-canh</option><option value="pose">Khung xương OpenPose</option><option value="depth">Độ sâu (depth)</option><option value="all">Cả 3 (.zip)</option></select></label>
+       <label class="field">Phạm vi<select id="ctlRange"><option value="all">Cả cảnh</option><option value="sel">Vùng đang chọn</option></select></label>
+      </div>
+      <button id="ctlBtn" class="primary">⬇ Xuất video MP4</button>
+      <p class="hint">MP4 đúng từng khung, cỡ theo "Khung video" ở trên. Đưa vào công cụ video→video (Runway, Luma, Viggle, Wan Animate…) cùng ảnh nhân vật để AI giữ nguyên chuyển động.</p>
+     </div>
+    </div>
+    <div class="card"><h4>Gói cho Google Flow</h4>
+     <div class="stack">
+      <div class="grid2">
+       <label class="field">Mỗi đoạn<select id="flowSeg"><option value="1">1 giây</option><option value="2" selected>2 giây</option><option value="4">4 giây</option><option value="8">8 giây</option></select></label>
+       <label class="field">Phạm vi<select id="flowRange"><option value="all">Cả cảnh</option><option value="sel">Vùng đang chọn</option></select></label>
+      </div>
+      <button id="flowBtn">⬇ Tải gói Flow (.zip)</button>
+      <p class="hint">Ảnh khung đầu / cuối từng đoạn + prompt chữ (tiếng Anh, tả từng nhịp theo giây) + hướng dẫn. Đoạn càng ngắn càng sát JSON.</p>
+     </div>
+    </div>
+    <div class="card"><h4>Phần mềm 3D · Blender / Unreal</h4>
+     <div class="stack">
+      <div class="row"><button id="glbBtn">⬇ .glb cả cảnh</button><button id="bvhBtn">⬇ .bvh</button></div>
+      <p class="hint">.glb: nhân vật có xương + đạo cụ + camera, khớp 100% với JSON. .bvh: chỉ xương, mỗi nhân vật một file. Blender: File → Import → glTF 2.0 / Motion Capture (.bvh).</p>
      </div>
     </div>
     <div class="card"><h4>Kiểm tra</h4>
@@ -456,7 +494,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <div class="sc"><span>Đưa khớp về 0°</span><span><kbd>R</kbd></span></div>
   <h4>Chỉnh</h4>
   <div class="sc"><span>Chỉnh nhỏ / lớn theo trục</span><span><kbd>←→↑↓</kbd> <kbd>Shift</kbd></span></div>
-  <div class="sc"><span>Ô số X/Y/Z</span><span>gõ số · cuộn chuột</span></div>
+  <div class="sc"><span>Ô số X/Y/Z</span><span>gõ số · cuộn chuột · kéo ngang chữ X/Y/Z</span></div>
   <div class="sc"><span>Áp tư thế / lật trái↔phải</span><span><kbd>P</kbd> <kbd>M</kbd></span></div>
   <div class="sc"><span>Sao chép / dán toàn cảnh</span><span><kbd>C</kbd> <kbd>V</kbd></span></div>
   <div class="sc"><span>Hoàn tác / làm lại</span><span><kbd>Ctrl+Z</kbd> <kbd>Ctrl+Y</kbd></span></div>
@@ -465,6 +503,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <div class="sc"><span>Lưu keyframe / xoá keyframe</span><span><kbd>K</kbd> <kbd>Delete</kbd></span></div>
   <div class="sc"><span>Keyframe trước / sau</span><span><kbd>J</kbd> <kbd>L</kbd></span></div>
   <div class="sc"><span>Lùi / tiến 1 frame (Shift: 1 giây)</span><span><kbd>,</kbd> <kbd>.</kbd></span></div>
+  <div class="sc"><span>Lăn chuột trên timeline: từng frame (Shift: 10 frame)</span><span>cuộn</span></div>
   <div class="sc"><span>Về đầu / về cuối</span><span><kbd>Home</kbd> <kbd>End</kbd></span></div>
   <div class="sc"><span>Ghi chú ý đồ</span><span><kbd>N</kbd></span></div>
   <div class="sc"><span>Chọn vùng / dời / sao chép key</span><span>kéo nền · kéo dấu · <kbd>Alt</kbd>+kéo</span></div>
@@ -472,6 +511,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <h4>Camera &amp; hiển thị</h4>
   <div class="sc"><span>Di chuyển camera</span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <kbd>Q</kbd><kbd>E</kbd></span></div>
   <div class="sc"><span>Góc nhìn mặc định</span><span><kbd>H</kbd></span></div>
+  <div class="sc"><span>Camera nhìn vào chỗ đang chọn (không chọn: cả cảnh)</span><span><kbd>F</kbd></span></div>
   <div class="sc"><span>Ghost / motion trail</span><span><kbd>G</kbd> <kbd>T</kbd></span></div>
   <div class="sc"><span>Hiện / ẩn video tham chiếu</span><span><kbd>B</kbd></span></div>
   <div class="sc"><span>Bảng phím tắt</span><span><kbd>?</kbd></span></div>
@@ -479,5 +519,5 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 </dialog>
 
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
-<script type="module" src="./engine.js?v=0.20"></script>
+<script type="module" src="./engine.js?v=0.23"></script>
 </html>

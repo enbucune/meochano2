@@ -1,5 +1,5 @@
 // AI Motion Studio core: pure data logic (no DOM, no Three.js). Runs in browser and Node.
-export const APP_VERSION='0.20';
+export const APP_VERSION='0.23';
 export const SCHEMA_VERSION=2;
 export const EASES=['smooth','linear','easeIn','easeOut','easeInOut','hold','strike','overshoot'];
 // Also accepted: "cubic-bezier(x1,y1,x2,y2)" (CSS syntax). Unknown/missing ease = smooth (v0.11 behaviour).

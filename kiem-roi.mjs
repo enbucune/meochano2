@@ -1,7 +1,7 @@
 // "Kiếm rơi" — A chém, B lách, chặt vào cổ tay cầm kiếm, kiếm văng rơi xuống sàn. 100% SDK v0.19.
 // Usage (from the app folder): node examples/kiem-roi.mjs . out
 import fs from 'fs';import path from 'path';import {pathToFileURL} from 'url';
-const [ROOT='.',OUT='out']=process.argv.slice(2);const U=pathToFileURL(path.resolve(ROOT)).href;const C=await import(U+'/core.js?v=0.20'),L=await import(U+'/library.js?v=0.20');
+const [ROOT='.',OUT='out']=process.argv.slice(2);const U=pathToFileURL(path.resolve(ROOT)).href;const C=await import(U+'/core.js?v=0.23'),L=await import(U+'/library.js?v=0.23');
 const run=(p,cmds)=>{let r=L.runCommands(p,cmds),bad=r.results.filter(x=>!x.ok);if(bad.length)throw Error(JSON.stringify(bad));return r};
 let r=run(null,[{op:'fps',value:30},{op:'duration',value:8},
  {op:'character',id:'A',name:'Kiếm sĩ áo đen',desc:'nam, áo choàng đen, tóc buộc cao',position:[-1.0,0,0],yaw:90,color:'#65caff'},

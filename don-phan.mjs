@@ -1,7 +1,7 @@
 // "Đòn phản" — built ONLY with AI Motion Studio v0.13 SDK commands + SDK measurements (no hand-set joint angles).
 // Usage (from the app folder): node examples/don-phan.mjs . out
 import fs from 'fs';import path from 'path';import {pathToFileURL} from 'url';
-const [ROOT='.',OUT='out']=process.argv.slice(2);const U=pathToFileURL(path.resolve(ROOT)).href;const C=await import(U+'/core.js?v=0.20'),L=await import(U+'/library.js?v=0.20');
+const [ROOT='.',OUT='out']=process.argv.slice(2);const U=pathToFileURL(path.resolve(ROOT)).href;const C=await import(U+'/core.js?v=0.23'),L=await import(U+'/library.js?v=0.23');
 const log=(...a)=>console.log(...a),R=Math.PI/180;
 const run=(p,cmds)=>{let r=L.runCommands(p,cmds),bad=r.results.filter(x=>!x.ok);if(bad.length)throw Error(JSON.stringify(bad));return r};
 const pos=(p,id,j,t)=>L.worldAt(p,id,t).pos[j];
