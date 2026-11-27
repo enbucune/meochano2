@@ -1,7 +1,7 @@
 import * as T from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import {TransformControls} from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/TransformControls.js';
-import {APP_VERSION,HAND_PRESETS,presetAngles,presetChannels,isPresetTrack,fingerJoints,sample,migrate,validate,optimize,stringifyProject,actorTracks,footLock,fullReport,RIG,objectName} from './core.js?v=0.16';
-import {POSES,MOTIONS,listMotions,applyPose,mirrorPose,applyMotion,extractClip,moveKeys,scaleRange,deleteFrames,addNote,makePrompt,runCommands,catalog,inspect,bakeProject} from './library.js?v=0.16';
+import {APP_VERSION,HAND_PRESETS,presetAngles,presetChannels,isPresetTrack,fingerJoints,sample,migrate,validate,optimize,stringifyProject,actorTracks,footLock,fullReport,RIG,objectName,attachAt} from './core.js?v=0.20';
+import {POSES,MOTIONS,listMotions,applyPose,mirrorPose,applyMotion,extractClip,moveKeys,scaleRange,deleteFrames,addNote,makePrompt,runCommands,catalog,inspect,bakeProject,addObject,removeObject,duplicateObject,makeAiBrief,stringifyBrief,grabObject,releaseObject,dropObject,snapToHand,propHolds,HOLD_JOINTS,newLibrary,normLibrary,libPut,mergeLibrary,capturePose,useLibMotion} from './library.js?v=0.20';
 const $=id=>document.getElementById(id), rad=Math.PI/180;
 const scene=new T.Scene();scene.background=new T.Color(0x182332);const grid=new T.GridHelper(12,24);scene.add(grid);const renderer=new T.WebGLRenderer({antialias:false,preserveDrawingBuffer:true});renderer.setPixelRatio(1);$('view').append(renderer.domElement);const camera=new T.PerspectiveCamera(42,1,.05,100);
 const sphere=new T.SphereGeometry(1,8,6), cylinder=new T.CylinderGeometry(1,1,1,6), cube=new T.BoxGeometry(1,1,1);let project, actors=[], props=[], time=0, playing=false, az=0, recording=false;
@@ -54,7 +54,7 @@ quadScene.add(new T.Mesh(new T.PlaneGeometry(2,2),outlineFX));
 const boxEdges=new T.EdgesGeometry(cube);
 function clearOutlines(){for(let e of edgeEntries){e.line.removeFromParent();e.line.material.dispose()}edgeEntries=[];outlineEntries=[];for(let m of maskMaterials.values())m.dispose();maskMaterials.clear()}
 function initOutlines(){let id=0;for(let a of actors){let i=++id,part=0,digit=127;a.root.traverse(o=>{if(o.isMesh){let n=/_(finger|toe)\d+_\d+$/.test(o.userData.joint||'')?++digit:++part;outlineEntries.push({mesh:o,actor:a.spec.id,id:i*256+n,material:o.material})}})}props.forEach((o,index)=>{let i=++id;outlineEntries.push({mesh:o,index,id:i*256+1,material:o.material});let line=new T.LineSegments(boxEdges,new T.LineBasicMaterial({color:outlineColor(i-1),transparent:true,opacity:.8,depthTest:true,depthWrite:false}));line.raycast=()=>{};o.add(line);edgeEntries.push({line,index})});renderLegend()}
-function renderLegend(){let el=$('legend');el.replaceChildren();let entries=[...actors.map((a,i)=>({label:a.spec.id,index:i,active:selected?.actor===a.spec.id})),...props.map((o,i)=>({label:objectName(project.objects[i],i),index:actors.length+i,active:selected?.kind==='object'&&selected.index===i}))];for(let e of entries){let row=document.createElement('div'),dot=document.createElement('span'),name=document.createElement('span');row.className='legendRow'+(e.active?' chosen':'');dot.className='swatch';dot.style.background=outlineColor(e.index);name.textContent=e.label;row.append(dot,name);el.append(row)}}
+function renderLegend(){let el=$('legend');el.replaceChildren();let entries=[...actors.map((a,i)=>({label:a.spec.name?`${a.spec.id} · ${a.spec.name}`:a.spec.id,index:i,active:selected?.actor===a.spec.id})),...props.map((o,i)=>({label:objectName(project.objects[i],i),index:actors.length+i,active:selected?.kind==='object'&&selected.index===i}))];for(let e of entries){let row=document.createElement('div'),dot=document.createElement('span'),name=document.createElement('span');row.className='legendRow'+(e.active?' chosen':'');dot.className='swatch';dot.style.background=outlineColor(e.index);name.textContent=e.label;row.append(dot,name);el.append(row)}}
 function renderOutlined(){let show=$('showOutlines').checked, parts=$('showParts').checked, active=recording?null:selected;for(let e of edgeEntries)e.line.visible=show;
  if(!show&&!parts&&!active){renderer.render(scene,camera);return;}
  renderer.setRenderTarget(colorRT);renderer.render(scene,camera);
@@ -150,7 +150,7 @@ $('play').onclick=togglePlay;$('reset').onclick=()=>seek(0);$('time').oninput=()
 $('delKey').onclick=()=>deleteKey();
 function restore(from,to){if(!from.length)return;let t=time;to.push(JSON.stringify(project));load(JSON.parse(from.pop()));seek(t);autoSave()}$('undo').onclick=()=>restore(history,future);$('redo').onclick=()=>restore(future,history);
 $('setDuration').onclick=()=>{let d=+$('duration').value,max=Math.max(0,...project.tracks.flatMap(t=>t.keys.map(k=>k[0])),...project.cameraKeys.map(k=>k[0]));if(d>=max&&d>=1&&d<=600){snapshot();project.duration=d;$('time').max=d;seek(time);autoSave()}else $('status').textContent='Thời lượng không hợp lệ hoặc cắt mất keyframe'};
-$('agent').onclick=()=>{scene.updateMatrixWorld(true);let data={time,units:'meters/degrees',camera:camDraft||cameraState(),cameraPose:{position:cameraPosition(camDraft||cameraState()),target:(camDraft||cameraState()).slice(3)},characters:actors.map(a=>({id:a.spec.id,position:a.root.position.toArray(),joints:Object.fromEntries(Object.entries(a.joints).map(([n,g])=>[n,{position:g.getWorldPosition(new T.Vector3()).toArray(),rotation:g.rotation.toArray().slice(0,3).map(x=>x/rad)}]))})),objects:props.map((g,i)=>({index:i,name:objectName(project.objects[i],i),...(project.objects[i].desc?{desc:project.objects[i].desc}:{}),position:g.position.toArray(),rotation:g.rotation.toArray().slice(0,3).map(x=>x/rad),size:g.scale.toArray()}))};save(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'position.json')};
+$('agent').onclick=()=>{scene.updateMatrixWorld(true);let data={time,units:'meters/degrees',camera:camDraft||cameraState(),cameraPose:{position:cameraPosition(camDraft||cameraState()),target:(camDraft||cameraState()).slice(3)},characters:actors.map(a=>({id:a.spec.id,...(a.spec.name?{name:a.spec.name}:{}),...(a.spec.desc?{desc:a.spec.desc}:{}),position:a.root.position.toArray(),joints:Object.fromEntries(Object.entries(a.joints).map(([n,g])=>[n,{position:g.getWorldPosition(new T.Vector3()).toArray(),rotation:g.rotation.toArray().slice(0,3).map(x=>x/rad)}]))})),objects:props.map((g,i)=>({index:i,name:objectName(project.objects[i],i),...(project.objects[i].desc?{desc:project.objects[i].desc}:{}),position:g.position.toArray(),rotation:g.rotation.toArray().slice(0,3).map(x=>x/rad),size:g.scale.toArray()}))};save(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'position.json')};
 
 // v0.11: IK is an editing operation; exported files still use existing FK tracks.
 function worldPos(g){return g.getWorldPosition(new T.Vector3())}
@@ -263,7 +263,7 @@ fillMotions();{let _load=load;load=function(p){_load(p);fillMotions();selFrames.
 // --- agent API in the browser console: same commands as the CLI ---
 window.ams={version:APP_VERSION,catalog,get project(){return JSON.parse(JSON.stringify(project))},
  run(cmds){snapshot();let t=time,r=runCommands(project,Array.isArray(cmds)?cmds:[cmds]);load(r.project);seek(Math.min(t,project.duration));afterEdit('AI: đã chạy '+r.results.length+' lệnh');return r.results},
- report(){return fullReport(project)},prompt(o){return makePrompt(project,o)},inspect(t=time){return inspect(project,t)},bake(o){return bakeProject(project,o)},load(json){snapshot();load(json);seek(0);autoSave()}};
+ report(){return fullReport(project)},prompt(o){return makePrompt(project,o)},brief(level='detailed'){return makeAiBrief(project,{level})},inspect(t=time){return inspect(project,t)},bake(o){return bakeProject(project,o)},load(json){snapshot();load(json);seek(0);autoSave()}};
 $('bakeBtn').onclick=()=>{if(!project)return;$('status').textContent='Đang bake…';setTimeout(()=>{let {project:out,report}=bakeProject(project);save(new Blob([JSON.stringify(out)],{type:'application/json'}),'project-v011.json');$('status').textContent=`Đã xuất JSON chuẩn v0.11: ${report.keys} key, sai lệch tối đa ${report.maxJointError_mm} mm (ghi chú không có trong v0.11)`},20)};
 
 // ======================= v0.14: manual editing comfort =======================
@@ -353,14 +353,171 @@ $('objName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault
 // Legend: click a row to select that character / prop
 {let _rl=renderLegend;renderLegend=function(){_rl();[...$('legend').children].forEach((row,k)=>{row.title='Bấm để chọn';row.onclick=()=>{if(recording)return;if(k<actors.length){let a=actors[k];select({kind:'actor',actor:a.spec.id,g:a.root,label:a.spec.id})}else{let i=k-actors.length;select({kind:'object',index:i,g:props[i],label:objectName(project.objects[i],i)});if($('tool').value==='camera')setTool('move')}invalidate()}})}}
 // Floating name tags over props (DOM overlay: never captured in the recorded video)
-let labelEls=[],labelSig='';
+let labelEls=[];
+// Name tags: props (top of the box) and characters (above the head). DOM overlay → never in the recorded video.
 function renderLabels(force){let box=$('labels');if(!project||!box)return;let show=$('showLabels').checked&&!recording;box.style.display=show?'':'none';if(!show)return;
- if(force||labelEls.length!==props.length){box.replaceChildren();labelEls=props.map((g,i)=>{let d=document.createElement('div');d.className='objLabel';d.style.setProperty('--c',outlineColor(actors.length+i));box.append(d);return d})}
- let w=$('view').clientWidth,h=$('view').clientHeight,v=new T.Vector3();
- props.forEach((g,i)=>{let d=labelEls[i],name=objectName(project.objects[i],i);if(d.textContent!==name)d.textContent=name;g.getWorldPosition(v);let c=v.clone().project(camera);v.y+=Math.abs(g.scale.y)/2;v.project(camera);
-  // label at the top of the box; if only part of the box is on screen, keep the tag inside the viewport edge
-  let vis=c.z<1&&c.z>-1&&Math.abs(c.x)<1.05&&Math.abs(c.y)<1.05;d.style.display=vis?'':'none';if(!vis)return;let x=((v.z<1?v.x:c.x)+1)/2*w,y=(1-(v.z<1?v.y:c.y))/2*h;
-  d.style.left=Math.min(w-60,Math.max(60,x)).toFixed(1)+'px';d.style.top=Math.min(h-4,Math.max(24,y)).toFixed(1)+'px';d.title=project.objects[i].desc||'';d.classList.toggle('on',selected?.kind==='object'&&selected.index===i)})}
+ let n=props.length+actors.length;if(force||labelEls.length!==n){box.replaceChildren();labelEls=[];props.forEach((g,i)=>{let d=document.createElement('div');d.className='objLabel';d.style.setProperty('--c',outlineColor(actors.length+i));box.append(d);labelEls.push(d)});actors.forEach((a,k)=>{let d=document.createElement('div');d.className='objLabel charLabel';d.style.setProperty('--c',outlineColor(k));box.append(d);labelEls.push(d)})}
+ let w=$('view').clientWidth,h=$('view').clientHeight,v=new T.Vector3(),c=new T.Vector3();
+ const place=(d,anchorTop,anchorMid,text,tip,on)=>{if(d.textContent!==text)d.textContent=text;d.title=tip||'';let p=anchorTop.project(camera),m=anchorMid.project(camera),vis=m.z<1&&m.z>-1&&Math.abs(m.x)<1.05&&Math.abs(m.y)<1.05;d.style.display=vis?'':'none';if(!vis)return;
+  let x=((p.z<1?p.x:m.x)+1)/2*w,y=(1-(p.z<1?p.y:m.y))/2*h;d.style.left=Math.min(w-60,Math.max(60,x)).toFixed(1)+'px';d.style.top=Math.min(h-4,Math.max(24,y)).toFixed(1)+'px';d.classList.toggle('on',!!on)};
+ props.forEach((g,i)=>{g.getWorldPosition(c);v.copy(c);v.y+=Math.abs(g.scale.y)/2;place(labelEls[i],v.clone(),c.clone(),objectName(project.objects[i],i),project.objects[i].desc,selected?.kind==='object'&&selected.index===i)});
+ actors.forEach((a,k)=>{a.joints.head.getWorldPosition(c);v.copy(c);v.y+=.24;let sp=a.spec;place(labelEls[props.length+k],v.clone(),c.clone(),sp.name?`${sp.id} · ${sp.name}`:sp.id,sp.desc,selected?.actor===sp.id)})}
 {let _d=draw;draw=function(){_d();renderLabels()}}
 $('showLabels').addEventListener('change',()=>{pref('labels',$('showLabels').checked?'1':'0');renderLabels(true);invalidate()});if(pref('labels')==='0')$('showLabels').checked=false;
 {let _load=load;load=function(p){_load(p);renderLabels(true);syncObjCard()}}
+
+// ======================= v0.17: add / duplicate / delete props, character names =======================
+function rebuildScene(){let t=time;load(project);seek(Math.min(t,project.duration))}
+function selectObjIndex(i){select({kind:'object',index:i,g:props[i],label:objectName(project.objects[i],i)});if($('tool').value==='camera'||$('tool').value==='ik')setTool('move')}
+function doAddObject(){if(!project||recording)return;playing=false;let st=camDraft||cameraState();snapshot();let i=addObject(project,{position:[+st[3].toFixed(2),.25,+st[5].toFixed(2)],size:[.5,.5,.5]});rebuildScene();selectObjIndex(i);setTool('move');showTab('edit');autoSave();$('status').textContent=`Đã thêm "${objectName(project.objects[i],i)}" · gõ tên ở tab Chỉnh, kéo mũi tên để đặt vị trí`;setTimeout(()=>{$('objName').focus();$('objName').select()},30)}
+function doDuplicateObject(){let i=selObj();if(i==null||recording)return;playing=false;snapshot();let j=duplicateObject(project,i,time);rebuildScene();selectObjIndex(j);autoSave();$('status').textContent=`Đã nhân bản thành "${objectName(project.objects[j],j)}"`}
+function doDeleteObject(){let i=selObj();if(i==null||recording)return;playing=false;let name=objectName(project.objects[i],i);snapshot();removeObject(project,i);rebuildScene();select(null);autoSave();$('status').textContent=`Đã xoá "${name}" · Ctrl+Z để hoàn tác`}
+$('addObj').onclick=()=>{doAddObject();$('addObj').blur()};$('addObj2').onclick=doAddObject;$('dupObj').onclick=doDuplicateObject;$('delObj').onclick=doDeleteObject;
+// Character display name / description (id stays the key used by tracks)
+let charEditSnap=false;const selChar=()=>selected?.actor?project.characters.find(c=>c.id===selected.actor):null;
+function syncCharCard(){let c=selChar();$('charCard').hidden=!c;if(!c)return;if(c.name&&selected){let t=`${c.id} · ${c.name}`+(selected.kind==='joint'?' / '+selected.name:'');if($('selection').textContent!==t)$('selection').textContent=t}$('charId').textContent='mã '+c.id;if(document.activeElement!==$('charName'))$('charName').value=c.name||'';if(document.activeElement!==$('charDesc'))$('charDesc').value=c.desc||''}
+function editChar(field,v){let c=selChar();if(!c)return;if(!charEditSnap){snapshot();charEditSnap=true}v=field==='name'?v:v.trim();if(v.trim())c[field]=v;else delete c[field];renderLegend();renderLabels(true)}
+function finishCharEdit(){let c=selChar();if(c&&typeof c.name==='string'){c.name=c.name.trim();if(!c.name)delete c.name}syncCharCard();if(charEditSnap){charEditSnap=false;autoSave();renderLegend();renderLabels(true);$('status').textContent='Đã lưu tên / mô tả nhân vật · Ctrl+Z để hoàn tác'}}
+$('charName').addEventListener('input',()=>editChar('name',$('charName').value));$('charDesc').addEventListener('input',()=>editChar('desc',$('charDesc').value));
+for(let id of ['charName','charDesc']){$(id).addEventListener('change',finishCharEdit);$(id).addEventListener('blur',finishCharEdit)}
+$('charName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('charName').blur()}});
+{let _sel=select;select=function(s){if(charEditSnap)finishCharEdit();_sel(s);syncCharCard()}}
+{let _load=load;load=function(p){_load(p);syncCharCard()}}
+
+// ======================= v0.18: ai-brief.json =======================
+if(pref('briefLevel'))$('briefLevel').value=pref('briefLevel');$('briefLevel').addEventListener('change',()=>pref('briefLevel',$('briefLevel').value));
+$('briefBtn').onclick=()=>{if(!project||recording)return;playing=false;$('status').textContent='Đang tạo ai-brief.json…';$('briefBtn').disabled=true;setTimeout(()=>{try{let lv=$('briefLevel').value,b=makeAiBrief(project,{level:lv}),txt=stringifyBrief(b);save(new Blob([txt],{type:'application/json'}),'ai-brief.json');let kb=txt.length/1024,size=kb>1024?(kb/1024).toFixed(1)+' MB':Math.round(kb)+' KB';
+ $('status').textContent=`Đã xuất ai-brief.json (${size}, ${b.beats.length} nhịp, ${b.trajectory.samples} mẫu)`+(kb>400?' · file lớn: AI chat giới hạn độ dài thì chọn mức Chuẩn':'')}catch(e){$('status').textContent='Không tạo được ai-brief: '+e.message}finally{$('briefBtn').disabled=false}},20)};
+
+// ======================= v0.19: characters hold and release props =======================
+const _hv=new T.Vector3(),_hq=new T.Quaternion(),_he=new T.Euler(),_ho=new T.Quaternion();
+function applyAttachments(t){if(!project)return;props.forEach((g,i)=>{if(draft.has(g))return;let h=attachAt(project,i,t);if(!h)return;let a=actors.find(a=>a.spec.id===h.to),j=a?.joints[h.joint];if(!j)return;j.updateWorldMatrix(true,false);j.getWorldPosition(_hv);j.getWorldQuaternion(_hq);
+ g.position.set(...h.offset).applyQuaternion(_hq).add(_hv);_ho.setFromEuler(_he.set(h.rot[0]*rad,h.rot[1]*rad,h.rot[2]*rad,'XYZ'));g.quaternion.copy(_hq).multiply(_ho)})}
+{let _ad=applyDraft;applyDraft=function(){_ad();applyAttachments(time)}}
+// moving / rotating a held prop changes the grip of the current hold (saved with the keyframe)
+{let _c=commit;commit=function(){let regrip=[];if(project)props.forEach((g,i)=>{if(!draft.has(g))return;let h=attachAt(project,i,time);if(h)regrip.push({i,h,pos:g.getWorldPosition(new T.Vector3()),q:g.getWorldQuaternion(new T.Quaternion())})});_c();
+ if(!regrip.length)return;for(let r of regrip){let a=actors.find(a=>a.spec.id===r.h.to),j=a?.joints[r.h.joint];if(!j)continue;j.updateWorldMatrix(true,false);let jp=j.getWorldPosition(new T.Vector3()),jq=j.getWorldQuaternion(new T.Quaternion()),inv=jq.clone().invert();
+  let off=r.pos.clone().sub(jp).applyQuaternion(inv),rq=inv.multiply(r.q),e=new T.Euler().setFromQuaternion(rq,'XYZ'),tr=project.tracks.find(x=>x.actor==='@object:'+r.i&&x.axis==='attach'),k=tr?.keys.find(k=>Math.abs(k[0]-r.h.from)<1e-9);
+  if(k)k[1]={...k[1],offset:off.toArray().map(v=>+v.toFixed(4)),rot:[e.x,e.y,e.z].map(v=>+(v/rad).toFixed(2))}}revision++;autoSave();invalidate();draw();$('status').textContent='Đã chỉnh kiểu cầm (áp dụng cho cả lần cầm này) · Ctrl+Z để hoàn tác'}}
+// hold panel
+function fillHoldWho(){let el=$('holdWho'),cur=el.value;el.replaceChildren();for(let a of actors)for(let [j,lab] of Object.entries(HOLD_JOINTS)){let o=document.createElement('option');o.value=a.spec.id+'|'+j;o.textContent=`${a.spec.name?a.spec.id+' · '+a.spec.name:a.spec.id} — ${lab}`;el.append(o)}if(cur&&[...el.options].some(o=>o.value===cur))el.value=cur}
+function nearestHand(i){let g=props[i],v=g.getWorldPosition(new T.Vector3()),best=null,bd=Infinity;for(let a of actors)for(let j of ['R_wrist','L_wrist']){let d=a.joints[j].getWorldPosition(new T.Vector3()).distanceTo(v);if(d<bd){bd=d;best=a.spec.id+'|'+j}}return best}
+function syncHoldCard(){let i=selObj();$('holdCard').hidden=i==null;if(i==null)return;fillHoldWho();let h=attachAt(project,i,time),holds=propHolds(project,i);
+ if(h){let a=project.characters.find(c=>c.id===h.to);$('holdState').textContent=`Đang được ${a?.name?h.to+' · '+a.name:h.to} cầm (${HOLD_JOINTS[h.joint]||h.joint}) từ ${h.from.toFixed(2)}s`;$('holdWho').value=h.to+'|'+h.joint}
+ else{$('holdState').textContent=holds.length?`Tự do lúc này · có ${holds.length} lần cầm: `+holds.map(x=>`${x.by} ${x.from.toFixed(1)}–${x.to.toFixed(1)}s`).join(', '):'Tự do (chưa ai cầm)';if(document.activeElement!==$('holdWho')){let n=nearestHand(i);if(n)$('holdWho').value=n}}
+ $('releaseBtn').disabled=$('dropBtn').disabled=$('snapGripBtn').disabled=!h}
+function holdAction(fn,msg){let i=selObj();if(i==null||recording)return;playing=false;if(draft.size)commit();snapshot();try{let r=fn(i);rebuildScene();selectObjIndex(i);autoSave();$('status').textContent=msg(r,i)}catch(e){history.pop();$('status').textContent=e.message}}
+$('grabBtn').onclick=()=>holdAction(i=>{let [who,j]=$('holdWho').value.split('|');return grabObject(project,i,who,j,time,{handPreset:$('autoHand').checked?'auto':null})},(r,i)=>`✊ ${$('holdWho').selectedOptions[0].textContent} cầm "${objectName(project.objects[i],i)}" từ ${nowT().toFixed(2)}s`+(r.distanceM>.25?' · vật thể đang cách tay '+r.distanceM.toFixed(2)+' m: bấm "Đặt khít vào lòng bàn tay" nếu muốn':''));
+$('releaseBtn').onclick=()=>holdAction(i=>releaseObject(project,i,time,{handPreset:$('autoHand').checked?'auto':null}),(r,i)=>`Đã thả "${objectName(project.objects[i],i)}" tại ${r.t.toFixed(2)}s · tua tới sau rồi kéo vật thể tới chỗ rơi (tự keyframe)`);
+$('dropBtn').onclick=()=>holdAction(i=>dropObject(project,i,time),(r,i)=>`⤓ "${objectName(project.objects[i],i)}" rơi xuống sàn lúc ${r.landAt.toFixed(2)}s tại x=${r.landing[0]}, z=${r.landing[2]} · chỉnh lại keyframe tuỳ ý`);
+$('snapGripBtn').onclick=()=>holdAction(i=>snapToHand(project,i,time),(r,i)=>`Đã đặt "${objectName(project.objects[i],i)}" khít vào lòng bàn tay · xoay vật thể nếu muốn đổi hướng`);
+$('holdWho').addEventListener('change',()=>$('holdWho').blur());
+{let _sel=select;select=function(s){_sel(s);syncHoldCard()}}
+{let _sk=seek;seek=function(t){_sk(t);syncHoldCard()}}
+{let _load=load;load=function(p){_load(p);syncHoldCard()}}
+
+// ======================= v0.19: JSON panel (copy out / paste in) =======================
+let jsonDirty=false;
+function jsonInfo(msg,kind){let el=$('jsonInfo');el.textContent=msg;el.className='hint'+(kind?' '+kind:'')}
+const jsonSize=t=>{let kb=new Blob([t]).size/1024;return kb>1024?(kb/1024).toFixed(1)+' MB':Math.max(1,Math.round(kb))+' KB'};
+function fillJson(txt,label){$('jsonText').value=txt;jsonDirty=false;$('jsonText').scrollTop=0;jsonInfo(`${label} · ${jsonSize(txt)} · ${txt.split('\n').length} dòng`)}
+function fillProject(){fillJson(stringifyProject(project),'Project hiện tại')}
+function openJson(){if(!project)return;playing=false;if(!jsonDirty||!$('jsonText').value.trim())fillProject();$('jsonDlg').showModal();$('jsonText').focus();$('jsonText').setSelectionRange(0,0)}
+$('jsonBtn').onclick=()=>{openJson();$('jsonBtn').blur()};$('jsonBtn2').onclick=openJson;$('jsonClose').onclick=()=>$('jsonDlg').close();
+$('jsonDlg').addEventListener('click',e=>{if(e.target===$('jsonDlg'))$('jsonDlg').close()});
+window.addEventListener('keydown',e=>{if(!$('jsonDlg').open)return;if(e.key==='Escape'){e.preventDefault();$('jsonDlg').close()}e.stopImmediatePropagation()},true);
+$('jsonText').addEventListener('input',()=>{jsonDirty=true;jsonInfo('Đã sửa · bấm Kiểm tra hoặc Nạp vào cảnh')});
+$('jsonFill').onclick=fillProject;
+$('jsonFillBrief').onclick=()=>{jsonInfo('Đang tạo ai-brief…');setTimeout(()=>{try{fillJson(stringifyBrief(makeAiBrief(project,{level:$('briefLevel').value})),'ai-brief ('+$('briefLevel').selectedOptions[0].textContent.split('·')[0].trim()+')')}catch(e){jsonInfo(e.message,'err')}},20)};
+$('jsonClear').onclick=()=>{$('jsonText').value='';jsonDirty=true;$('jsonText').focus();jsonInfo('Ô trống · dán JSON vào (Cmd/Ctrl+V)')};
+$('jsonCopy').onclick=async()=>{let t=$('jsonText').value;if(!t.trim()){jsonInfo('Ô đang trống','err');return}try{await navigator.clipboard.writeText(t);jsonInfo(`✓ Đã sao chép ${jsonSize(t)} vào clipboard`,'ok')}catch(e){$('jsonText').focus();$('jsonText').select();let okc=false;try{okc=document.execCommand('copy')}catch(_){}jsonInfo(okc?`✓ Đã sao chép ${jsonSize(t)}`:'Trình duyệt chặn sao chép tự động · nội dung đã được bôi đen, bấm Cmd/Ctrl+C',okc?'ok':'err')}};
+$('jsonPaste').onclick=async()=>{try{let t=await navigator.clipboard.readText();if(!t.trim()){jsonInfo('Clipboard trống','err');return}$('jsonText').value=t;jsonDirty=true;checkJson()}catch(e){$('jsonText').focus();$('jsonText').select();jsonInfo('Trình duyệt chặn đọc clipboard · bấm vào ô rồi Cmd/Ctrl+V','err')}};
+function jsonKind(v){if(Array.isArray(v))return v.length&&v.every(x=>x&&typeof x.op==='string')?'commands':'unknown';if(v&&typeof v==='object'){if(Array.isArray(v.commands))return 'commands';if(v.format==='ai-motion-studio/ai-brief')return 'brief';if(Array.isArray(v.characters)&&Array.isArray(v.tracks))return 'project'}return 'unknown'}
+function parseJsonBox(){let t=$('jsonText').value.trim();if(!t)throw Error('Ô đang trống · dán JSON vào trước');try{return JSON.parse(t)}catch(e){let m=/position (\d+)/.exec(e.message),where='';if(m){let pos=+m[1],before=t.slice(0,pos),line=before.split('\n').length,col=pos-before.lastIndexOf('\n');where=` (dòng ${line}, cột ${col})`;$('jsonText').focus();$('jsonText').setSelectionRange(pos,Math.min(t.length,pos+1))}throw Error('JSON sai cú pháp'+where+': '+e.message.replace(/ in JSON at position \d+.*$/,''))}}
+function checkJson(){try{let v=parseJsonBox(),k=jsonKind(v);
+ if(k==='project'){let r=validate(migrate(v));if(r.errors.length){jsonInfo(`Project có ${r.errors.length} lỗi: ${r.errors.slice(0,3).join(' · ')}`,'err');return null}jsonInfo(`✓ Project hợp lệ · ${v.characters.length} nhân vật, ${(v.objects||[]).length} vật thể, ${v.duration}s${r.warnings.length?' · '+r.warnings.length+' cảnh báo':''} · Nạp sẽ thay toàn bộ cảnh`,'ok');return {k,v}}
+ if(k==='commands'){let cmds=Array.isArray(v)?v:v.commands,r=runCommands(project,cmds),bad=r.results.filter(x=>!x.ok);if(bad.length){jsonInfo(`${bad.length}/${cmds.length} lệnh lỗi: `+bad.slice(0,3).map(b=>`#${b.i} ${b.op}: ${b.error}`).join(' · '),'err');return null}jsonInfo(`✓ ${cmds.length} lệnh hợp lệ · Nạp sẽ áp vào cảnh hiện tại`,'ok');return {k,v:cmds,result:r.project}}
+ if(k==='brief'){jsonInfo('Đây là ai-brief (để gửi AI đọc), không nạp vào cảnh được · dán project.json hoặc danh sách lệnh','err');return null}
+ jsonInfo('Không nhận ra JSON này · cần project (có characters + tracks) hoặc danh sách lệnh [{"op":…}]','err');return null}catch(e){jsonInfo(e.message,'err');return null}}
+$('jsonCheck').onclick=checkJson;
+$('jsonApply').onclick=()=>{let c=checkJson();if(!c||recording)return;let t=time;snapshot();try{if(c.k==='project'){load(c.v);seek(0);$('status').textContent='Đã nạp project từ bảng JSON · Ctrl+Z để quay lại cảnh cũ'}else{load(c.result);seek(Math.min(t,project.duration));$('status').textContent=`Đã áp ${c.v.length} lệnh từ bảng JSON · Ctrl+Z để hoàn tác`}autoSave();jsonDirty=false;$('jsonDlg').close()}catch(e){history.pop();jsonInfo('Không nạp được: '+e.message,'err')}};
+// ======================= v0.20: reference video / image over the viewport =======================
+const ref={kind:null,url:null,name:'',tg:null};
+function refPrefs(){try{return JSON.parse(pref('ref')||'{}')||{}}catch(e){return {}}}
+function saveRefPrefs(){let o=refPrefs();o.opacity=+$('refOpacity').value;o.flip=$('refFlip').checked;if(ref.name){o.last=ref.name;o.files=o.files||{};delete o.files[ref.name];o.files[ref.name]={offset:+$('refOffset').value||0,rate:+$('refRate').value||1};let ks=Object.keys(o.files);while(ks.length>20)delete o.files[ks.shift()]}pref('ref',JSON.stringify(o))}
+function refTarget(){return (+$('refOffset').value||0)+time*(+$('refRate').value||1)}
+function refInfo(){let v=$('refVideo');if(!ref.kind){let last=refPrefs().last;$('refInfo').textContent=last?`Lần trước: ${last} · chọn lại file để dùng tiếp (giữ chỉnh lệch cũ).`:'Chưa có. Kéo thả file vào khung 3D cũng được.';return}
+ $('refInfo').textContent=ref.kind==='image'?`Ảnh: ${ref.name}`:`${ref.name} · dài ${Number.isFinite(v.duration)?v.duration.toFixed(2)+'s':'…'} · đang hiện giây ${v.currentTime.toFixed(2)}${$('refLayer').classList.contains('out')?' (ngoài video)':''}`}
+function syncRef(){let L=$('refLayer'),v=$('refVideo'),on=!!ref.kind&&$('refShow').checked&&!recording;if(L.hidden===on){L.hidden=!on;$('refBtn').classList.toggle('on',on)}if(ref.kind!=='video')return;if(!on){if(!v.paused)v.pause();ref.tg=null;return}
+ let tg=refTarget(),d=v.duration,out=tg<0||(Number.isFinite(d)&&tg>d+1e-3);if(out!==L.classList.contains('out')){L.classList.toggle('out',out);refInfo()}if(out){if(!v.paused)v.pause();ref.tg=null;return}
+ if(playing){let r=Math.min(16,Math.max(.0625,Number($('speed').value)*(+$('refRate').value||1)));if(Math.abs(v.playbackRate-r)>1e-6)v.playbackRate=r;if(v.paused){v.currentTime=tg;v.play().catch(()=>{})}else if(!v.seeking&&Math.abs(v.currentTime-tg)>.15)v.currentTime=tg;ref.tg=null}
+ else{let was=!v.paused;if(was)v.pause();if(was||ref.tg==null||Math.abs(ref.tg-tg)>1e-4){ref.tg=tg;v.currentTime=tg}}}
+{let _draw=draw;draw=function(...a){let r=_draw.apply(this,a);try{syncRef()}catch(e){}return r}}
+// currentTime may lag right after pause/seek → re-check once the browser reports a settled frame
+function refFix(){let v=$('refVideo');if(ref.kind!=='video'||playing||recording||!$('refShow').checked||v.seeking)return;let tg=refTarget();if(tg<0||tg>v.duration)return;if(Math.abs(v.currentTime-tg)>.002){ref.tg=tg;v.currentTime=tg}}
+function refKind(f){return f.type.startsWith('video/')||/\.(mp4|mov|m4v|webm|mkv)$/i.test(f.name)?'video':f.type.startsWith('image/')||/\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name)?'image':null}
+function setRef(file){if(!file)return;let kind=refKind(file);if(!kind){$('status').textContent='Không phải video / ảnh: '+file.name;return}
+ clearRef(true);ref.kind=kind;ref.name=file.name;ref.url=URL.createObjectURL(file);let L=$('refLayer');L.className=kind;L.classList.toggle('flip',$('refFlip').checked);
+ let sv=refPrefs().files?.[file.name];$('refOffset').value=sv?sv.offset:0;$('refRate').value=sv?sv.rate:1;
+ if(kind==='video'){let v=$('refVideo');v.onloadedmetadata=()=>{refInfo();syncRef()};v.onseeked=()=>{refInfo();refFix()};v.onpause=refFix;v.onerror=()=>{if(ref.kind==='video')$('status').textContent='Trình duyệt không mở được video này · thử .mp4 (H.264) hoặc .webm'};v.src=ref.url}else $('refImg').src=ref.url;
+ $('refShow').disabled=false;$('refClear').disabled=false;for(let el of [$('refOffset'),$('refRate'),...document.querySelectorAll('[data-refnudge]')])el.disabled=kind!=='video';
+ $('refShow').checked=true;saveRefPrefs();refInfo();syncRef();$('status').textContent=`Tham chiếu: ${file.name} · B ẩn/hiện · chỉnh độ đậm, lệch thời gian ở tab Cảnh`}
+function clearRef(keep){let v=$('refVideo');v.pause();v.onerror=null;v.removeAttribute('src');v.load();$('refImg').removeAttribute('src');if(ref.url)URL.revokeObjectURL(ref.url);ref.kind=null;ref.url=null;ref.name='';ref.tg=null;$('refLayer').className='';$('refLayer').hidden=true;$('refBtn').classList.remove('on');
+ if(!keep){$('refShow').checked=false;$('refShow').disabled=true;$('refClear').disabled=true;for(let el of [$('refOffset'),$('refRate'),...document.querySelectorAll('[data-refnudge]')])el.disabled=true;refInfo()}}
+function toggleRef(){if(!ref.kind){$('refFile').click();return}$('refShow').checked=!$('refShow').checked;syncRef();$('status').textContent=$('refShow').checked?'Hiện tham chiếu':'Ẩn tham chiếu'}
+$('refFile').onchange=e=>{setRef(e.target.files[0]);e.target.value=''};
+$('refClear').onclick=()=>{clearRef();$('status').textContent='Đã bỏ tham chiếu'};
+$('refShow').onchange=()=>syncRef();
+$('refBtn').onclick=()=>{toggleRef();$('refBtn').blur()};
+$('refOpacity').oninput=()=>{$('refLayer').style.opacity=$('refOpacity').value/100;saveRefPrefs()};
+$('refFlip').onchange=()=>{$('refLayer').classList.toggle('flip',$('refFlip').checked);saveRefPrefs()};
+for(let id of ['refOffset','refRate'])$(id).addEventListener('input',()=>{saveRefPrefs();syncRef()});
+for(let b of document.querySelectorAll('[data-refnudge]'))b.onclick=()=>{let k=b.dataset.refnudge,f=1/(project?.fps||30),d=k==='-f'?-f:k==='+f'?f:+k;$('refOffset').value=+((+$('refOffset').value||0)+d).toFixed(4);saveRefPrefs();syncRef();b.blur()};
+window.addEventListener('keydown',e=>{if(e.code!=='KeyB'||!project||recording||editingText(e)||e.ctrlKey||e.metaKey||e.altKey||$('helpDlg').open||$('jsonDlg').open)return;e.preventDefault();if(!e.repeat)toggleRef()});
+{let o=refPrefs();if(o.opacity)$('refOpacity').value=o.opacity;$('refLayer').style.opacity=$('refOpacity').value/100;$('refFlip').checked=!!o.flip;clearRef()}
+// drag & drop: video/image → reference · project .json → open · my-library.json → merge library. Never let the browser navigate away.
+for(let ev of ['dragover','drop'])window.addEventListener(ev,e=>{if([...(e.dataTransfer?.types||[])].includes('Files'))e.preventDefault()});
+{let vp=document.querySelector('.viewport'),depth=0,hasFiles=e=>[...(e.dataTransfer?.types||[])].includes('Files');
+ vp.addEventListener('dragenter',e=>{if(!hasFiles(e))return;e.preventDefault();depth++;vp.classList.add('drop')});
+ vp.addEventListener('dragover',e=>{if(hasFiles(e)){e.preventDefault();e.dataTransfer.dropEffect='copy'}});
+ vp.addEventListener('dragleave',()=>{if(--depth<=0){depth=0;vp.classList.remove('drop')}});
+ vp.addEventListener('drop',async e=>{e.preventDefault();depth=0;vp.classList.remove('drop');let f=e.dataTransfer.files[0];if(!f||recording)return;
+  if(/\.json$/i.test(f.name)||f.type==='application/json'){try{let j=JSON.parse(await f.text());if(j?.type==='ams-my-library'){importLib(j);return}if(jsonKind(j)!=='project')throw Error(f.name+': không phải project JSON');snapshot();load(j);seek(0);autoSave();$('status').textContent=`Đã mở ${f.name} · Ctrl+Z để quay lại cảnh cũ`}catch(err){$('status').textContent=err.message}}else setRef(f)})}
+
+// ======================= v0.20: personal library (poses + clips reused in every project) =======================
+let myLib=newLibrary();try{let raw=localStorage.getItem('ams:mylib');if(raw)myLib=normLibrary(JSON.parse(raw))}catch(e){}
+function saveMyLib(){try{localStorage.setItem('ams:mylib',JSON.stringify(myLib));return true}catch(e){$('status').textContent='Bộ nhớ trình duyệt đầy · bấm Xuất file để giữ thư viện rồi xoá bớt';return false}}
+function editorRot(id){draw();let a=actors.find(a=>a.spec.id===id),rot={};for(let [n,g] of Object.entries(a.joints)){let r=fkRot.has(g)&&!draft.has(g)?fkRot.get(g):g.rotation;rot[n]=[r.x/rad,r.y/rad,r.z/rad]}return rot}
+function fillPoses(){let S=$('poseSel'),cur=S.value;S.replaceChildren();let g=document.createElement('optgroup');g.label='Có sẵn';for(let [k,v] of Object.entries(POSES))g.append(new Option(v.label,k));S.append(g);
+ let ks=Object.keys(myLib.poses);if(ks.length){let m=document.createElement('optgroup');m.label='★ Của anh';for(let k of ks)m.append(new Option('★ '+k,'my:'+k));S.append(m)}if(cur)S.value=cur;if(!S.value)S.selectedIndex=0}
+doApplyPose=function(){if(!project||recording)return;let id=needActor();if(!id)return;playing=false;let v=$('poseSel').value,my=v.startsWith('my:'),pose=my?myLib.poses[v.slice(3)]:v,label=my?v.slice(3):POSES[v]?.label||v;if(!pose){$('status').textContent='Tư thế không còn trong thư viện';return}
+ snapshot();try{applyPose(project,id,pose,nowT(),{ease:easeChoice(),ground:$('poseGround').checked});clearActorDraft(id);afterEdit(`Tư thế "${label}" · ${id} tại ${nowT().toFixed(2)}s`)}catch(e){history.pop();$('status').textContent=e.message}};
+$('applyPose').onclick=()=>doApplyPose();
+$('savePose').onclick=()=>{if(!project||recording)return;let id=needActor();if(!id)return;playing=false;let rot=editorRot(id),name=prompt('Tên tư thế (lưu vào thư viện của anh):','Tư thế '+(Object.keys(myLib.poses).length+1));if(!name?.trim())return;
+ let n=libPut(myLib,'poses',name,capturePose(project,id,nowT(),{rot}));if(!saveMyLib()){delete myLib.poses[n];return}refreshMy();$('poseSel').value='my:'+n;$('status').textContent=`★ Đã lưu tư thế "${n}" · P để áp cho nhân vật khác`};
+fillMotions=function(){let S=$('motionSel'),cur=S.value;S.replaceChildren();let gB=document.createElement('optgroup'),gP=document.createElement('optgroup'),gM=document.createElement('optgroup');gB.label='Có sẵn';gP.label='Trong cảnh này';gM.label='★ Của anh';
+ for(let [k,v] of Object.entries(listMotions(project)))(v.builtIn?gB:gP).append(new Option(v.builtIn?v.label:'★ '+v.label,k));for(let k of Object.keys(myLib.motions))gM.append(new Option('★ '+k,'my:'+k));
+ S.append(gB);if(gP.children.length)S.append(gP);if(gM.children.length)S.append(gM);if(cur)S.value=cur;if(!S.value)S.selectedIndex=0;motionParamsUI()};
+{const _mpu=motionParamsUI;motionParamsUI=function(){let v=$('motionSel').value,my=v.startsWith('my:');if(my)for(let [id,on] of [['mDistanceL',0],['mDirectionL',1],['mHeightL',0],['mSideL',1]])$(id).style.display=on?'':'none';else _mpu();let custom=my||!listMotions(project)[v]?.builtIn,o=$('mSide').options;o[0].text=custom?'Gốc':'Phải';o[1].text=custom?'Lật trái↔phải':'Trái'}}
+{const _add=doAddMotion;doAddMotion=function(){let S=$('motionSel'),v=S.value;if(!project||recording||!v.startsWith('my:'))return _add();let clip=myLib.motions[v.slice(3)];if(!clip){$('status').textContent='Đòn không còn trong thư viện';return}if(!needActor())return;
+ let k=useLibMotion(project,clip,v.slice(3));fillMotions();S.value=k;try{_add()}finally{fillMotions();S.value=v;motionParamsUI()}};$('addMotion').onclick=()=>doAddMotion()}
+$('saveClip').onclick=()=>{let id=needActor(),ts=selTimes();if(!id||ts.length<2){if(id)$('status').textContent='Chọn vùng ≥ 2 mốc';return}let name=prompt('Tên đòn / chuyển động (lưu vào thư viện của anh, dùng cho mọi cảnh):','Đòn '+(Object.keys(myLib.motions).length+1));if(!name?.trim())return;name=name.trim();
+ snapshot();let clip=extractClip(project,id,ts[0],ts.at(-1)),k=useLibMotion(project,clip,name),n=libPut(myLib,'motions',name,clip),ok=saveMyLib();if(!ok)delete myLib.motions[n];refreshMy();$('motionSel').value=ok?'my:'+n:k;motionParamsUI();afterEdit(`★ Đã lưu "${ok?n:k}" (${(ts.at(-1)-ts[0]).toFixed(2)}s)${ok?' vào thư viện của anh':' vào cảnh này'} · dùng lại ở tab Thư viện`)};
+function libBtn(t,title,fn){let b=document.createElement('button');b.textContent=t;b.title=title;b.onclick=()=>{b.blur();fn()};return b}
+function renderMyLib(){let box=$('myLib');box.replaceChildren();for(let kind of ['poses','motions'])for(let [k,v] of Object.entries(myLib[kind])){let row=document.createElement('div'),tag=document.createElement('small'),nm=document.createElement('span'),info=document.createElement('small');row.className='li';row.dataset.kind=kind;row.dataset.name=k;
+  tag.textContent=kind==='poses'?'Tư thế':'Đòn';nm.textContent=k;nm.title=k;info.textContent=kind==='motions'?(+v.duration).toFixed(2)+'s':'';row.append(tag,nm,info,libBtn('Dùng','Áp cho nhân vật đang chọn tại mốc này',()=>useMy(kind,k)),libBtn('✎','Đổi tên',()=>renameMy(kind,k)),libBtn('✕','Xoá khỏi thư viện',()=>deleteMy(kind,k)));box.append(row)}
+ let np=Object.keys(myLib.poses).length,nm=Object.keys(myLib.motions).length;$('myLibInfo').textContent=np+nm?`${np} tư thế · ${nm} đòn`:'Chưa có gì. Lưu tư thế ở trên, hoặc chọn vùng trên timeline rồi bấm ★ Lưu chuyển động.';$('myLibExport').disabled=!(np+nm)}
+function refreshMy(){fillPoses();fillMotions();renderMyLib()}
+function useMy(kind,k){if(kind==='poses'){$('poseSel').value='my:'+k;doApplyPose()}else{$('motionSel').value='my:'+k;motionParamsUI();doAddMotion()}}
+function renameMy(kind,k){let n=prompt('Tên mới:',k);if(!n?.trim()||n.trim()===k)return;let item=myLib[kind][k];delete myLib[kind][k];let nn=libPut(myLib,kind,n,item);saveMyLib();refreshMy();$('status').textContent=`Đã đổi tên "${k}" → "${nn}"`}
+function deleteMy(kind,k){if(!confirm(`Xoá "${k}" khỏi thư viện của anh? (cảnh đã dùng vẫn giữ nguyên)`))return;delete myLib[kind][k];saveMyLib();refreshMy();$('status').textContent=`Đã xoá "${k}" khỏi thư viện`}
+function importLib(j){let r=mergeLibrary(myLib,j);if(!saveMyLib())return;refreshMy();$('status').textContent=`Đã nạp thư viện: thêm ${r.added}${r.same?` · ${r.same} đã có`:''}`}
+$('myLibExport').onclick=()=>{save(new Blob([JSON.stringify(myLib)],{type:'application/json'}),'my-library.json');$('status').textContent='Đã xuất my-library.json · kéo thả vào app (hoặc Nạp file) để dùng lại'};
+$('myLibFile').onchange=async e=>{let f=e.target.files[0];e.target.value='';if(!f)return;try{importLib(JSON.parse(await f.text()))}catch(err){$('status').textContent='Không nạp được: '+err.message}};
+window.addEventListener('storage',e=>{if(e.key!=='ams:mylib')return;try{myLib=normLibrary(JSON.parse(e.newValue||'{}'))}catch(err){myLib=newLibrary()}refreshMy()});
+// JSON panel also accepts a my-library file
+{const _kind=jsonKind;jsonKind=v=>v?.type==='ams-my-library'?'library':_kind(v);
+ const _check=checkJson;checkJson=function(){let v;try{v=parseJsonBox()}catch(e){jsonInfo(e.message,'err');return null}if(jsonKind(v)!=='library')return _check();try{let L=normLibrary(v);jsonInfo(`✓ Thư viện: ${Object.keys(L.poses).length} tư thế, ${Object.keys(L.motions).length} đòn · Nạp sẽ gộp vào thư viện của anh (cảnh không đổi)`,'ok');return {k:'library',v}}catch(e){jsonInfo(e.message,'err');return null}};
+ $('jsonCheck').onclick=()=>checkJson();const _apply=$('jsonApply').onclick;$('jsonApply').onclick=()=>{let v;try{v=JSON.parse($('jsonText').value)}catch(e){return _apply()}if(jsonKind(v)!=='library')return _apply();if(checkJson()){importLib(v);jsonDirty=false;$('jsonDlg').close()}}}
+Object.assign(window.ams,{myLib:()=>JSON.parse(JSON.stringify(myLib)),ref:()=>({kind:ref.kind,name:ref.name,target:refTarget(),shown:!$('refLayer').hidden,videoTime:$('refVideo').currentTime,paused:$('refVideo').paused})});
+refreshMy();

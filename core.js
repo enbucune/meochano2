@@ -1,5 +1,5 @@
 // AI Motion Studio core: pure data logic (no DOM, no Three.js). Runs in browser and Node.
-export const APP_VERSION='0.16';
+export const APP_VERSION='0.20';
 export const SCHEMA_VERSION=2;
 export const EASES=['smooth','linear','easeIn','easeOut','easeInOut','hold','strike','overshoot'];
 // Also accepted: "cubic-bezier(x1,y1,x2,y2)" (CSS syntax). Unknown/missing ease = smooth (v0.11 behaviour).
@@ -61,6 +61,7 @@ export function cameraChannel(cameraKeys,i){let j=[1,2,3,5,6,7].indexOf(i);retur
 
 // ---------- Migration / backward compatibility ----------
 // schemaVersion 1 = every file before v0.12 (field "version" was an unrelated label, e.g. "0.3").
+export const characterName=c=>(typeof c?.name==='string'&&c.name.trim())||c?.id||'';
 export const objectName=(o,i)=>(typeof o?.name==='string'&&o.name.trim())||(o?.id!=null&&String(o.id).trim())||`Vật thể ${i+1}`;
 export function migrate(input){let p=JSON.parse(JSON.stringify(input));if(!p||typeof p!=='object')return p;let from=Number.isInteger(p.schemaVersion)?p.schemaVersion:1;
  if(from<2){if(p.version!==undefined&&p.legacyVersion===undefined)p.legacyVersion=String(p.version);delete p.version}
@@ -84,14 +85,16 @@ export function validate(p){let errors=[],warnings=[],E=(m)=>errors.push(m),W=(m
  let ids=new Set(),dur=p.duration,frame=t=>Math.round(t*p.fps);
  p.characters.forEach((c,i)=>{let n=`characters[${i}]`;if(typeof c?.id!=='string'||!c.id)E(n+': thiếu id');else if(ids.has(c.id))E(n+`: trùng id "${c.id}"`);else ids.add(c.id);
   if(!vec3(c?.position))E(n+': position phải là [x,y,z]');else{if(Math.abs(c.position[0])>20||Math.abs(c.position[2])>20)W(n+': đứng quá xa tâm (>20m)');if(c.position[1]<-0.5||c.position[1]>10)W(n+': độ cao bất thường')}
-  if(c?.yaw!==undefined&&!fin(c.yaw))E(n+': yaw phải là số');if(c?.color!==undefined&&typeof c.color!=='string')W(n+': color nên là chuỗi #rrggbb')});
+  if(c?.yaw!==undefined&&!fin(c.yaw))E(n+': yaw phải là số');if(c?.color!==undefined&&typeof c.color!=='string')W(n+': color nên là chuỗi #rrggbb');if(c?.name!==undefined&&typeof c.name!=='string')W(n+': name nên là chuỗi');if(c?.desc!==undefined&&typeof c.desc!=='string')W(n+': desc nên là chuỗi')});
+ {let seen=new Map();p.characters.forEach((c,i)=>{let k=typeof c?.name==='string'?c.name.trim().toLowerCase():'';if(!k)return;if(seen.has(k))W(`characters[${i}]: trùng tên "${c.name}" với characters[${seen.get(k)}]`);else seen.set(k,i)})}
  (p.objects||[]).forEach((o,i)=>{let n=`objects[${i}]`;if(!vec3(o?.position))E(n+': position phải là [x,y,z]');if(!vec3(o?.size))E(n+': size phải là [x,y,z]');else if(o.size.some(s=>s<=0))W(n+': size có cạnh ≤ 0');else if(o.size.some(s=>s>50))W(n+': kích thước > 50m');if(o?.name!==undefined&&(typeof o.name!=='string'||!o.name.trim()))W(n+': name nên là chuỗi khác rỗng');if(o?.desc!==undefined&&typeof o.desc!=='string')W(n+': desc nên là chuỗi')});
  {let seen=new Map();(p.objects||[]).forEach((o,i)=>{let k=typeof o?.name==='string'?o.name.trim().toLowerCase():'';if(!k)return;if(seen.has(k))W(`objects[${i}]: trùng tên "${o.name}" với objects[${seen.get(k)}] — AI sẽ khó phân biệt`);else seen.set(k,i)})}
  let checkKeys=(keys,n,valueCheck)=>{if(!Array.isArray(keys)||!keys.length){E(n+': keys rỗng');return}let prev=-Infinity,frames=new Set();keys.forEach((k,j)=>{let kn=`${n}.keys[${j}]`;if(!Array.isArray(k)||k.length<2){E(kn+': phải là [t, value, ease?]');return}if(!fin(k[0])){E(kn+': thời gian không hợp lệ');return}if(k[0]<0)E(kn+': thời gian âm');if(k[0]>dur+1e-9)W(kn+`: t=${k[0]}s vượt duration ${dur}s`);if(k[0]<prev)E(kn+': keys chưa sắp xếp theo thời gian');if(k[0]===prev)E(kn+': trùng thời gian (gây NaN khi nội suy)');else if(frames.has(frame(k[0])))W(kn+': hai key cùng một frame');prev=k[0];frames.add(frame(k[0]));if(k.length>2&&!isEase(k[2]))W(kn+`: ease "${k[2]}" không hợp lệ (dùng ${EASES.join('/')} hoặc cubic-bezier(x1,y1,x2,y2))`);valueCheck(k[1],kn)})};
  let seen=new Set();
  p.tracks.forEach((t,i)=>{let n=`tracks[${i}]`;if(!t||typeof t!=='object'){E(n+': không phải object');return}let label=`${n} ${t.actor}/${t.joint}/${t.axis}`,sig=t.actor+'|'+t.joint+'|'+t.axis;if(seen.has(sig))W(label+': track trùng lặp, track sau sẽ ghi đè');seen.add(sig);
   let obj=/^@object:(\d+)$/.exec(t.actor||'');
-  if(obj){let oi=+obj[1];if(!p.objects?.[oi])E(label+': vật thể không tồn tại');if(t.joint!=='$root')E(label+': vật thể chỉ có joint "$root"');if(!/^[prs][xyz]$/.test(t.axis))E(label+': axis vật thể phải là px..sz');
+  if(obj){let oi=+obj[1];if(!p.objects?.[oi])E(label+': vật thể không tồn tại');if(t.joint!=='$root')E(label+': vật thể chỉ có joint "$root"');if(t.axis==='attach'){checkKeys(t.keys,label,(v,kn)=>{if(v===null)return;if(typeof v!=='object'||!ids.has(v.to))E(kn+': attach phải là null hoặc {to, joint, offset, rot} với nhân vật có thật');else{if(!JOINT_SET.has(v.joint))E(kn+`: khớp cầm "${v.joint}" không có`);if(!vec3(v.offset)||!vec3(v.rot))E(kn+': offset / rot phải là [x,y,z]')}});return}
+   if(!/^[prs][xyz]$/.test(t.axis))E(label+': axis vật thể phải là px..sz hoặc attach');
    checkKeys(t.keys,label,(v,kn)=>{if(!fin(v)){E(kn+': giá trị không phải số');return}if(t.axis[0]==='s'&&v<=0)W(kn+': scale ≤ 0');if(t.axis[0]==='p'&&Math.abs(v)>50)W(kn+': vị trí > 50m')});return}
   if(!ids.has(t.actor)){E(label+': nhân vật không tồn tại');return}
   if(isContactTrack(t)){checkKeys(t.keys,label,(v,kn)=>{if(v!==0&&v!==1&&v!==2)E(kn+': contact chỉ nhận 0 (nhấc), 1 (chạm đất), 2 (xoay trên mũi chân)')});return}
@@ -243,10 +246,25 @@ export function checkMotion(p,{step}={}){let issues=[],fps=p.fps,dt=step||1/fps,
   let ids=Object.keys(ws);for(let a=0;a<ids.length;a++)for(let b=a+1;b<ids.length;b++){let hit=limbHit(ws[ids[a]].pos,ws[ids[b]].pos),key=ids[a]+'|'+ids[b]+'|limb',ok=(p.intendedContacts||[]).some(ic=>t>=ic.from-1e-9&&t<=ic.to+1e-9&&(!ic.actors||(ic.actors.includes(ids[a])&&ic.actors.includes(ids[b]))));
    if(hit.d<-.01)open(key,t,{sev:ok?'info':'warning',code:ok?'INTENDED_CONTACT':'LIMB_COLLISION',actor:ids[a],other:ids[b],joint:hit.A+' ↔ '+hit.B,peak:-hit.d,message:ok?`${ids[a]}–${ids[b]}: chạm theo ý đồ (${hit.A} ↔ ${hit.B})`:`${ids[a]} xuyên ${ids[b]}: ${hit.A} ↔ ${hit.B}`,fix:ok?'—':'Giãn khoảng cách/đổi hướng; nếu là đòn trúng có chủ đích thì thêm intendedContacts {from,to,actors}'});else flush(key);let A=ws[ids[a]].pos.hips,B=ws[ids[b]].pos.hips,d=Math.hypot(A[0]-B[0],A[2]-B[2]);let k2=ids[a]+'|'+ids[b]+'|ov';if(d<.32)open(k2,t,{sev:'warning',code:'ACTOR_OVERLAP',actor:ids[a],other:ids[b],peak:.32-d,message:`${ids[a]} và ${ids[b]} chồng lên nhau`,fix:'Giãn khoảng cách $root x/z ≥ 0.4m'});else flush(k2)}}
  for(let k of [...runs.keys()])flush(k);
+ (p.objects||[]).forEach((o,i)=>{let moving=p.tracks.some(t=>t.actor==='@object:'+i&&(t.axis==='attach'||t.keys.length>1));if(!moving)return;let run=null,flushP=()=>{if(run){add('warning','PROP_UNDER_FLOOR',{actor:'@object:'+i,joint:objectName(o,i),from:+run.from.toFixed(3),to:+run.to.toFixed(3),peak:+run.peak.toFixed(3),message:`"${objectName(o,i)}" xuyên xuống sàn`,fix:'Nâng py (tâm khối = độ cao + nửa kích thước) hoặc xoay khối nằm trên sàn'});run=null}};
+  for(let k=0;k<=n;k++){let t=k*dt,low=propLowest(propTransform(p,i,t));if(low<-.02){if(run&&Math.abs(run.to-(t-dt))<1e-6){run.to=t;run.peak=Math.max(run.peak,-low)}else{flushP();run={from:t,to:t,peak:-low}}}else flushP()}flushP()});
  for(let t of p.tracks){if(isPresetTrack(t)||isContactTrack(t)||t.joint==='$root'||!Array.isArray(t.keys))continue;for(let i=1;i<t.keys.length;i++){let d=Math.abs(t.keys[i][1]-t.keys[i-1][1]);if(d>200)add('warning','ROTATION_FLIP',{actor:t.actor,joint:t.joint,axis:t.axis,from:t.keys[i-1][0],to:t.keys[i][0],peak:d,message:`${t.actor}: ${t.joint}.${t.axis} đổi ${Math.round(d)}° giữa 2 key`,fix:'Kiểm tra lật góc ±360°; chia nhỏ chuyển động'})}}
  issues.sort((a,b)=>(a.from??0)-(b.from??0));return issues}
-const SEG=[['hips','spine',.13],['spine','chest',.13],['chest','neck',.12],['neck','head',.05],['head','head',.12],...['L','R'].flatMap(s=>[[s+'_shoulder',s+'_elbow',.045],[s+'_elbow',s+'_wrist',.04],[s+'_hip',s+'_knee',.06],[s+'_knee',s+'_ankle',.05],[s+'_ankle',s+'_toe2_0',.045]])];
+export const SEG=[['hips','spine',.13],['spine','chest',.13],['chest','neck',.12],['neck','head',.05],['head','head',.12],...['L','R'].flatMap(s=>[[s+'_shoulder',s+'_elbow',.045],[s+'_elbow',s+'_wrist',.04],[s+'_hip',s+'_knee',.06],[s+'_knee',s+'_ankle',.05],[s+'_ankle',s+'_toe2_0',.045]])];
 export function segDist(p1,q1,p2,q2){let d1=V.sub(q1,p1),d2=V.sub(q2,p2),r=V.sub(p1,p2),a=V.dot(d1,d1),e=V.dot(d2,d2),f=V.dot(d2,r),s=0,t=0;if(a<1e-9&&e<1e-9)return V.len(r);if(a<1e-9)t=Math.min(1,Math.max(0,f/e));else{let c=V.dot(d1,r);if(e<1e-9)s=Math.min(1,Math.max(0,-c/a));else{let b=V.dot(d1,d2),den=a*e-b*b;s=den>1e-12?Math.min(1,Math.max(0,(b*f-c*e)/den)):0;t=(b*s+f)/e;if(t<0){t=0;s=Math.min(1,Math.max(0,-c/a))}else if(t>1){t=1;s=Math.min(1,Math.max(0,(b-c)/a))}}}return V.len(V.sub(V.add(p1,V.mul(d1,s)),V.add(p2,V.mul(d2,t))))}
 // Closest approach between two bodies (capsule model). d<0 = interpenetration depth.
 export function limbHit(A,B){let best={d:9};for(let [p1,q1,r1] of SEG)for(let [p2,q2,r2] of SEG){let d=segDist(A[p1],A[q1],B[p2],B[q2])-r1-r2;if(d<best.d)best={d,A:p1+'→'+q1,B:p2+'→'+q2}}return best}
 export function fullReport(p){let v=validate(p),issues=v.errors.length?[]:checkMotion(p);return {schemaVersion:SCHEMA_VERSION,app:APP_VERSION,summary:{errors:v.errors.length+issues.filter(i=>i.severity==='error').length,warnings:v.warnings.length+issues.filter(i=>i.severity==='warning').length,info:issues.filter(i=>i.severity==='info').length},validation:v,motion:issues,howToFix:'Sửa JSON theo trường fix của từng mục, rồi chạy lại: node ams-cli.mjs check project.json'}}
+
+// ======================= v0.19: props held by characters =======================
+// Track {actor:"@object:i", joint:"$root", axis:"attach", keys:[[t,{to:"A",joint:"R_wrist",offset:[x,y,z],rot:[x,y,z]}],[t2,null]]}
+// offset = position in the joint's local frame (m), rot = Euler XYZ (deg) relative to the joint. null = free (uses px..rz tracks).
+export const isAttachTrack=t=>t.axis==='attach'&&/^@object:\d+$/.test(t.actor);
+export function attachAt(p,i,t){let tr=p.tracks.find(x=>x.actor==='@object:'+i&&x.axis==='attach');if(!tr||!tr.keys.length||t<tr.keys[0][0]-1e-9)return null;let v=null,from=0;for(let k of tr.keys){if(k[0]>t+1e-9)break;v=k[1];from=k[0]}return v&&v.to?{...v,from}:null}
+// World transform of prop i at time t (attachments follow the holder's joint, including foot lock).
+export function propTransform(p,i,t){let o=p.objects[i],tr=ax=>p.tracks.find(x=>x.actor==='@object:'+i&&x.axis===ax),val=(ax,d)=>{let k=tr(ax);return k&&k.keys.length?sample(k.keys,t):d};
+ let pos=[0,1,2].map(k=>val('p'+'xyz'[k],o.position[k])),rotDeg=[0,1,2].map(k=>val('r'+'xyz'[k],0)),size=[0,1,2].map(k=>val('s'+'xyz'[k],o.size[k])),q=Q.euler(...rotDeg.map(v=>v*R)),held=attachAt(p,i,t);
+ if(held&&p.characters.some(c=>c.id===held.to)){let w=fk(evalPose(p,held.to,t)),jp=w.pos[held.joint],jq=w.q[held.joint];if(jp){pos=V.add(jp,Q.rot(jq,held.offset));q=Q.mul(jq,Q.euler(...held.rot.map(v=>v*R)));rotDeg=Q.toEuler(q).map(v=>v/R)}}
+ return {pos,rotDeg,q,size,held}}
+// Lowest point of a (rotated) prop box
+export function propLowest(tf){let m=Infinity;for(let a of [-1,1])for(let b of [-1,1])for(let c of [-1,1]){let v=Q.rot(tf.q,[a*tf.size[0]/2,b*tf.size[1]/2,c*tf.size[2]/2]);m=Math.min(m,tf.pos[1]+v[1])}return m}

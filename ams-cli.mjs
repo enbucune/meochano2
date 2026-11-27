@@ -7,11 +7,12 @@
 //   node ams-cli.mjs prompt <project.json> [16:9]    → video prompt text
 //   node ams-cli.mjs inspect <project.json> <time>    → world positions, facing, contacts, distances between characters
 //   node ams-cli.mjs bake <in.json> <out.json>       → plain v0.11 JSON (foot lock, presets, eases baked; opens in every version)
+//   node ams-cli.mjs brief <in.json> <out.json> [standard|detailed|max] → ai-brief.json: scene written for another AI (beats, hits, poses, camera, joint trajectories)
 import fs from 'fs';import path from 'path';
-import {migrate,validate,optimize,stringifyProject,fullReport} from './core.js?v=0.16';
-import {runCommands,makePrompt,catalog,inspect,bakeProject} from './library.js?v=0.16';
+import {migrate,validate,optimize,stringifyProject,fullReport} from './core.js?v=0.20';
+import {runCommands,makePrompt,catalog,inspect,bakeProject,makeAiBrief,stringifyBrief} from './library.js?v=0.20';
 const [cmd,a,b]=process.argv.slice(2),read=f=>JSON.parse(fs.readFileSync(f,'utf8'));
-const usage=()=>{console.log(fs.readFileSync(new URL(import.meta.url),'utf8').split('\n').slice(1,10).join('\n').replace(/^\/\/ ?/gm,''));process.exit(2)};
+const usage=()=>{console.log(fs.readFileSync(new URL(import.meta.url),'utf8').split('\n').slice(1,11).join('\n').replace(/^\/\/ ?/gm,''));process.exit(2)};
 switch(cmd){
  case 'catalog':console.log(JSON.stringify(catalog(),null,1));break;
  case 'build':{if(!a||!b)usage();let spec=read(a),cmds=Array.isArray(spec)?spec:spec.commands,base=spec.base?read(path.resolve(path.dirname(a),spec.base)):spec.project||null;
@@ -23,4 +24,5 @@ switch(cmd){
  case 'prompt':{if(!a)usage();console.log(makePrompt(migrate(read(a)),{aspect:b||'16:9'}));break}
  case 'inspect':{if(!a||b===undefined)usage();console.log(JSON.stringify(inspect(migrate(read(a)),+b),null,1));break}
  case 'bake':{if(!a||!b)usage();let p=migrate(read(a)),v=validate(p);if(v.errors.length){console.log(v.errors.join('\n'));process.exit(1)}let {project,report,intendedContacts}=bakeProject(p);fs.writeFileSync(b,JSON.stringify(project));let rep=fullReport({...project,intendedContacts});console.log(`Bake → ${b}: ${report.tracks} track, ${report.keys} key, sai lệch khớp tối đa ${report.maxJointError_mm} mm · kiểm tra bản bake: ${rep.summary.errors} lỗi, ${rep.summary.warnings} cảnh báo`);if(report.notes.length)console.log('Ghi chú (v0.11 không hiển thị, giữ ở file riêng):\n'+report.notes.map(n=>`  ${n.t}${n.until!==undefined?'–'+n.until:''}s ${n.text}`).join('\n'));break}
+ case 'brief':{if(!a||!b)usage();let lv=process.argv[5]||'detailed',p=migrate(read(a)),v=validate(p);if(v.errors.length){console.log(v.errors.join('\n'));process.exit(1)}let br=makeAiBrief(p,{level:lv}),txt=stringifyBrief(br);fs.writeFileSync(b,txt);console.log(`ai-brief (${lv}) → ${b}: ${(txt.length/1024).toFixed(0)} KB · ${br.beats.length} nhịp · ${br.trajectory.samples} mẫu × ${br.trajectory.joints.length} khớp`);for(let x of br.beats.filter(x=>x.result))console.log(`  ${x.from}s ${x.actor} ${x.action||''} → ${x.target||''}: ${x.result}${x.impact?` (${x.impact.with} → ${x.impact.on})`:''}`);break}
  default:usage()}

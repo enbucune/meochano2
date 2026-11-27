@@ -1,6 +1,6 @@
 // AI Motion Studio library: poses, motion clips, timeline ops, notes, prompt, agent API.
 // Pure data functions on the project JSON. Used by the UI (engine.js), the CLI and AI agents alike.
-import {objectName,ANKLE_HEIGHT as ANK,evalPose,solveTwoBone,solveHinge,jointLimit,cameraChannel,checkMotion,limbHit,Q as QT,APP_VERSION,SCHEMA_VERSION,JOINTS,BODY_JOINTS,HAND_PRESETS,presetAngles,fingerJoints,isPresetTrack,isContactTrack,sample,migrate,validate,optimize,fullReport,stringifyProject,evalLocal,fk,lowestPoint,contactAt,DEFAULT_CAMERA} from './core.js?v=0.16';
+import {SEG,segDist,attachAt,propTransform,propLowest,isAttachTrack,objectName,characterName,ANKLE_HEIGHT as ANK,evalPose,solveTwoBone,solveHinge,jointLimit,cameraChannel,checkMotion,limbHit,Q as QT,APP_VERSION,SCHEMA_VERSION,JOINTS,BODY_JOINTS,HAND_PRESETS,presetAngles,fingerJoints,isPresetTrack,isContactTrack,sample,migrate,validate,optimize,fullReport,stringifyProject,evalLocal,fk,lowestPoint,contactAt,DEFAULT_CAMERA} from './core.js?v=0.20';
 
 const R=Math.PI/180;
 const snap=(p,t)=>Math.round(t*p.fps)/p.fps;
@@ -43,8 +43,8 @@ function restOf(p,actor,joint,axis){let c=p.characters.find(c=>c.id===actor);if(
 export function sceneKeyTimes(p){return [...new Set([...p.tracks.flatMap(t=>t.keys.map(k=>k[0])),...(p.cameraKeys||[]).map(k=>k[0])])].sort((a,b)=>a-b)}
 // Set one key; a new track created after t=0 holds the rest value until the previous scene key (same rule as the K button).
 export function setKey(p,actor,joint,axis,t,v,ease='smooth'){t=Math.min(Math.max(0,snap(p,t)),600);let tr=findTrack(p,actor,joint,axis);
- if(!tr){tr={actor,joint,axis,keys:[]};p.tracks.push(tr);if(frameOf(p,t)>0){let base=restOf(p,actor,joint,axis),prior=sceneKeyTimes(p).filter(k=>frameOf(p,k)<frameOf(p,t)).at(-1)||0;tr.keys.push([0,base,'hold']);if(frameOf(p,prior)>0)tr.keys.push([prior,base,'hold'])}}
- tr.keys=tr.keys.filter(k=>frameOf(p,k[0])!==frameOf(p,t));let key=[t,v];if(ease&&axis!=='contact')key.push(ease);tr.keys.push(key);tr.keys.sort((a,b)=>a[0]-b[0]);if(t>p.duration)p.duration=Math.min(600,Math.ceil(t));return tr}
+ if(!tr){tr={actor,joint,axis,keys:[]};p.tracks.push(tr);if(frameOf(p,t)>0&&axis!=='attach'){let base=restOf(p,actor,joint,axis),prior=sceneKeyTimes(p).filter(k=>frameOf(p,k)<frameOf(p,t)).at(-1)||0;tr.keys.push([0,base,'hold']);if(frameOf(p,prior)>0)tr.keys.push([prior,base,'hold'])}}
+ tr.keys=tr.keys.filter(k=>frameOf(p,k[0])!==frameOf(p,t));let key=[t,v];if(ease&&axis!=='contact'&&axis!=='attach')key.push(ease);tr.keys.push(key);tr.keys.sort((a,b)=>a[0]-b[0]);if(t>p.duration)p.duration=Math.min(600,Math.ceil(t));return tr}
 const stepAt=(keys,t,dflt)=>{if(!keys?.length)return dflt;let v=keys[0][1];for(let k of keys){if(k[0]>t)break;v=k[1]}return v};
 export function presetAt(p,actor,side,t){let tr=findTrack(p,actor,side+'_hand','preset');return tr?stepAt(tr.keys,t,'open'):null}
 export function contactValueAt(p,actor,side,t){let tr=findTrack(p,actor,side+'_foot','contact');return tr?stepAt(tr.keys,t,0):0}
@@ -134,7 +134,7 @@ export function mirrorClip(c){let ch={};for(let k in c.channels){let [j,ax]=k.sp
 export function listMotions(p){return {...Object.fromEntries(Object.entries(MOTIONS).map(([k,m])=>[k,{label:m.label,params:m.params,builtIn:true}])),...Object.fromEntries(Object.entries(p?.library?.motions||{}).map(([k,m])=>[k,{label:m.label||k,params:['direction','side'],builtIn:false}]))}}
 // Insert a clip for one actor at t0. opts: speed (time ×), duration (s, overrides speed), direction (deg), side ('L'|'R' mirrors
 // a right-handed motion), distance/height (generators), note (string|false). Same JSON result as manual editing.
-export function applyMotion(p,actor,name,t0,opts={}){let ctx={groundUp:pose=>{let l=evalLocal(p,actor,t0);let w=fk({pos:[0,0,0],yaw:0,rot:pose});return -lowestPoint(w)-l.pos[1]}};
+export function applyMotion(p,actor,name,t0,opts={}){if(!p.characters.some(c=>c.id===actor))throw Error(`Không có nhân vật "${actor}" (có: ${p.characters.map(c=>c.id).join(', ')||'chưa có ai'})`);let ctx={groundUp:pose=>{let l=evalLocal(p,actor,t0);let w=fk({pos:[0,0,0],yaw:0,rot:pose});return -lowestPoint(w)-l.pos[1]}};
  {let l=evalPose(p,actor,snap(p,t0)),w=fk(l),dy=(l.yaw+(opts.direction||0))*R,d=[Math.sin(dy),Math.cos(dy)];ctx.feet={L:(w.pos.L_ankle[0]-l.pos[0])*d[0]+(w.pos.L_ankle[2]-l.pos[2])*d[1],R:(w.pos.R_ankle[0]-l.pos[0])*d[0]+(w.pos.R_ankle[2]-l.pos[2])*d[1]};let rt=[d[1],-d[0]];ctx.lat={L:(w.pos.L_ankle[0]-w.pos.L_hip[0])*rt[0]+(w.pos.L_ankle[2]-w.pos.L_hip[2])*rt[1],R:(w.pos.R_ankle[0]-w.pos.R_hip[0])*rt[0]+(w.pos.R_ankle[2]-w.pos.R_hip[2])*rt[1]}}
  let clip=MOTIONS[name]?MOTIONS[name].make(opts,ctx):p.library?.motions?.[name]?clone(p.library.motions[name]):null;if(!clip)throw Error('Chuyển động không có: '+name);
  let defaultSide=name==='dodge'?'L':'R',sided=!MOTIONS[name]||MOTIONS[name].params.includes('side');if(opts.mirror||(sided&&opts.side&&opts.side!==defaultSide))clip=mirrorClip(clip);
@@ -186,6 +186,16 @@ export function scaleRange(p,t1,t2,factor){if(!(factor>0))throw Error('Hệ số
 export function deleteFrames(p,frames){let F=new Set(frames);eachKeyList(p,keys=>keys.filter(k=>!F.has(frameOf(p,k[0]))));p.tracks=p.tracks.filter(t=>t.keys.length)}
 
 // ---------------------------------------------------------------- notes & camera helpers
+const PROP_COLORS=['#64748b','#82916e','#776b58','#8b6f5a','#5f7d8c','#7a6a8f'];
+// Unique prop name ("Vật thể 5", or "Ghế gỗ 2" when duplicating)
+export function uniqueObjectName(p,base){let used=new Set((p.objects||[]).map((o,i)=>objectName(o,i).toLowerCase()));if(!used.has(base.toLowerCase()))return base;let m=/^(.*?)(?:\s+(\d+))?$/.exec(base),root=m[1],n=m[2]?+m[2]+1:2;while(used.has(`${root} ${n}`.toLowerCase()))n++;return `${root} ${n}`}
+export function addObject(p,{name,desc,position=[0,.25,0],size=[.5,.5,.5],color}={}){p.objects=p.objects||[];let i=p.objects.length,o={name:uniqueObjectName(p,(name||'').trim()||`Vật thể ${i+1}`),...(desc?{desc}:{}),position:position.map(Number),size:size.map(Number),color:color||PROP_COLORS[i%PROP_COLORS.length]};p.objects.push(o);return i}
+// Remove prop i; tracks of later props are renumbered so their animation stays attached to the right box.
+export function removeObject(p,i){if(!p.objects?.[i])throw Error('Không có vật thể '+i);p.objects.splice(i,1);p.tracks=p.tracks.filter(t=>t.actor!=='@object:'+i).map(t=>{let m=/^@object:(\d+)$/.exec(t.actor);return m&&+m[1]>i?{...t,actor:'@object:'+(+m[1]-1)}:t});return p.objects.length}
+// Duplicate prop i as a static copy at its pose at time t, shifted by `offset`.
+export function duplicateObject(p,i,t=0,offset=[.6,0,0]){let o=p.objects?.[i];if(!o)throw Error('Không có vật thể '+i);let tr=ax=>p.tracks.find(x=>x.actor==='@object:'+i&&x.axis===ax),val=(ax,d)=>{let k=tr(ax);return k?sample(k.keys,t):d};
+ let pos=[0,1,2].map(k=>val('p'+'xyz'[k],o.position[k])+offset[k]),size=[0,1,2].map(k=>val('s'+'xyz'[k],o.size[k]));let j=addObject(p,{name:uniqueObjectName(p,objectName(o,i)),desc:o.desc,position:pos,size,color:o.color});
+ for(let k=0;k<3;k++){let r=val('r'+'xyz'[k],0);if(Math.abs(r)>1e-6)p.tracks.push({actor:'@object:'+j,joint:'$root',axis:'r'+'xyz'[k],keys:[[0,+r.toFixed(3)]]})}return j}
 export function addNote(p,{t,until,text,actor,motion}){p.notes=p.notes||[];let n={t:snap(p,t),text};if(until!==undefined)n.until=snap(p,until);if(actor)n.actor=actor;if(motion)n.motion=motion;p.notes.push(n);p.notes.sort((a,b)=>a.t-b.t);return n}
 export function setCamera(p,{at=0,azimuth=0,elevation=15,distance=5,target=[0,1,0],ease='smooth'}){p.cameraKeys=p.cameraKeys||[];let t=snap(p,at);p.cameraKeys=p.cameraKeys.filter(k=>frameOf(p,k[0])!==frameOf(p,t));p.cameraKeys.push([t,azimuth,elevation,distance,ease,...target]);p.cameraKeys.sort((a,b)=>a[0]-b[0])}
 // Frame a set of characters at time t (auto target + distance).
@@ -197,21 +207,24 @@ const angle=e=>e>35?'high angle, looking down':e>8?'slightly high angle':e<-8?'l
 const side=a=>{a=((a%360)+360)%360;return a<22.5||a>=337.5?'from the front (+Z)':a<67.5?'from front-right':a<112.5?'from the right side (+X)':a<157.5?'from back-right':a<202.5?'from behind (−Z)':a<247.5?'from back-left':a<292.5?'from the left side (−X)':'from front-left'};
 export function makePrompt(p,{aspect='16:9',style=''}={}){let L=[],cam=p.cameraKeys?.length?p.cameraKeys:[[0,...DEFAULT_CAMERA.slice(0,3),'smooth',...DEFAULT_CAMERA.slice(3)]];
  L.push(`Reference motion clip: ${p.duration}s, ${p.fps} fps, aspect ${aspect}. Colored mannequins = characters, boxes = props/set (listed by name below). Follow the reference EXACTLY for blocking, body motion, timing and camera.`);
- L.push('','CHARACTERS:');for(let c of p.characters){let l=evalLocal(p,c.id,0);L.push(`- ${c.id} (${c.color||'mannequin'}): starts at x=${l.pos[0].toFixed(2)}, z=${l.pos[2].toFixed(2)}, facing ${Math.round(l.yaw)}°.`)}
- if(p.objects?.length){L.push('','PROPS / SET (each box in the reference is one of these objects):');p.objects.forEach((o,i)=>{let tr=p.tracks.filter(t=>t.actor==='@object:'+i&&t.keys.length>1),mv='';if(tr.length){let ts=tr.flatMap(t=>t.keys.map(k=>k[0])),what=[...new Set(tr.map(t=>({p:'moves',r:'rotates',s:'changes size'})[t.axis[0]]))].join(', ');mv=` — ${what} between ${Math.min(...ts).toFixed(1)}s and ${Math.max(...ts).toFixed(1)}s`}
-  L.push(`- "${objectName(o,i)}"${o.desc?`: ${o.desc}`:''} (box ${o.size.map(v=>+(+v).toFixed(2)).join('×')} m at x=${(+o.position[0]).toFixed(2)}, z=${(+o.position[2]).toFixed(2)})${mv}`)})}
+ L.push('','CHARACTERS:');for(let c of p.characters){let l=evalLocal(p,c.id,0);let nm=typeof c.name==='string'&&c.name.trim()?` = "${c.name.trim()}"`:'';L.push(`- ${c.id}${nm}${c.desc?`: ${c.desc}`:''} (${c.color||''} mannequin): starts at x=${l.pos[0].toFixed(2)}, z=${l.pos[2].toFixed(2)}, facing ${Math.round(l.yaw)}°.`)}
+ if(p.objects?.length){L.push('','PROPS / SET (each box in the reference is one of these objects):');p.objects.forEach((o,i)=>{let tr=p.tracks.filter(t=>t.actor==='@object:'+i&&t.keys.length>1&&!isAttachTrack(t)&&varies(t)),mv='';if(tr.length){let ts=tr.flatMap(t=>t.keys.map(k=>k[0])),what=[...new Set(tr.map(t=>({p:'moves',r:'rotates',s:'changes size'})[t.axis[0]]))].join(', ');mv=` — ${what} between ${Math.min(...ts).toFixed(1)}s and ${Math.max(...ts).toFixed(1)}s`}
+  let hs=propHolds(p,i).map(h=>{let after=propTransform(p,i,Math.min(p.duration,h.to+.6)),end=propTransform(p,i,p.duration);return `held in ${h.by}'s ${({R_wrist:'right hand',L_wrist:'left hand',chest:'back',hips:'hip',head:'head'})[h.joint]||h.joint} ${h.from.toFixed(1)}–${h.to.toFixed(1)}s`+(h.to<p.duration-1e-6&&!attachAt(p,i,h.to+1e-3)?`, then released and ends at x=${end.pos[0].toFixed(2)}, z=${end.pos[2].toFixed(2)}${propLowest(end)<.05?' on the floor':''}`:'')}).join('; ');
+  let t0=propTransform(p,i,0);L.push(`- "${objectName(o,i)}"${o.desc?`: ${o.desc}`:''} (box ${t0.size.map(v=>+(+v).toFixed(2)).join('×')} m, starts at x=${t0.pos[0].toFixed(2)}, y=${t0.pos[1].toFixed(2)}, z=${t0.pos[2].toFixed(2)})${mv}${hs?' — '+hs:''}`)})}
  L.push('','CAMERA:');cam.forEach((k,i)=>{let prev=cam[i-1],move='';if(prev){let da=k[1]-prev[1],dd=k[3]-prev[3];move=[Math.abs(da)>5?`orbit ${da>0?'left':'right'} ${Math.abs(Math.round(da))}°`:'',dd<-.4?'push in':dd>.4?'pull out':''].filter(Boolean).join(', ')||'hold'}L.push(`- ${k[0].toFixed(1)}s: ${shot(k[3])}, ${angle(k[2])}, ${side(k[1])}${move?` (${move}, ${k[4]||'smooth'})`:''}`)});
  L.push('','ACTION BEATS:');let notes=(p.notes||[]).slice().sort((a,b)=>a.t-b.t);if(notes.length)for(let n of notes)L.push(`- ${n.t.toFixed(1)}${n.until!==undefined?'–'+n.until.toFixed(1):''}s: ${n.text}`);else L.push('- (no notes — describe the action here)');
  L.push('','RENDER:',`- Replace mannequins with the final characters; keep exact poses, contact with the ground and timing.${style?' Style: '+style+'.':''}`,'- No extra cuts, no extra characters, no text overlays.');return L.join('\n')}
 
 // ---------------------------------------------------------------- agent API (same JSON as the UI)
-export const COMMANDS=['character','object','duration','fps','pose','joints','motion','hand','key','contact','camera','frame','note','mirror','saveMotion','retime','moveKeys','optimize','face','reach','approach','allowContact'];
+export const COMMANDS=['character','object','duration','fps','pose','joints','motion','hand','key','contact','camera','frame','note','mirror','saveMotion','retime','moveKeys','optimize','face','reach','approach','allowContact','removeObject','rename','grab','release','drop','snapToHand'];
 export function newProject({fps=30,duration=10}={}){return {schemaVersion:SCHEMA_VERSION,app:APP_VERSION,fps,duration,characters:[],objects:[],tracks:[],cameraKeys:[[0,0,15,5,'smooth',0,1,0]],notes:[]}}
 // at: number | "end" | "end+0.2" | "end-0.1" (relative to the end of this actor's previous motion/command).
 export function runCommands(input,commands){let p=input?migrate(input):newProject(),ends={},results=[];let at=(c)=>{let a=c.at??0;if(typeof a==='string'){let m=/^end([+-][\d.]+)?$/.exec(a.trim());if(!m)throw Error('at không hợp lệ: '+a);a=(ends[c.actor]??0)+(m[1]?+m[1]:0)}return Math.max(0,+a)};
  commands.forEach((c,i)=>{try{let r=null,t;switch(c.op){
-  case 'character':{if(p.characters.some(x=>x.id===c.id))throw Error('Trùng id '+c.id);p.characters.push({id:c.id,position:c.position||[0,0,0],yaw:c.yaw||0,color:c.color||['#65caff','#ff9865','#84ed83','#bf9aff'][p.characters.length%4]});break}
-  case 'object':p.objects=p.objects||[];p.objects.push({...(c.id?{id:c.id}:{}),name:(c.name||c.id||`Vật thể ${p.objects.length+1}`),...(c.desc?{desc:c.desc}:{}),position:c.position||[0,.5,0],size:c.size||[1,1,1],color:c.color||'#64748b'});r=p.objects.length-1;break;
+  case 'character':{if(p.characters.some(x=>x.id===c.id))throw Error('Trùng id '+c.id);p.characters.push({id:c.id,...(c.name?{name:c.name}:{}),...(c.desc?{desc:c.desc}:{}),position:c.position||[0,0,0],yaw:c.yaw||0,color:c.color||['#65caff','#ff9865','#84ed83','#bf9aff'][p.characters.length%4]});break}
+  case 'object':r=addObject(p,{name:c.name||c.id,desc:c.desc,position:c.position||[0,.5,0],size:c.size||[1,1,1],color:c.color});if(c.id)p.objects[r].id=c.id;break;
+  case 'removeObject':{let i=Number.isInteger(c.index)?c.index:(p.objects||[]).findIndex((o,k)=>objectName(o,k)===c.name);if(i<0)throw Error('Không tìm thấy vật thể '+(c.name??c.index));removeObject(p,i);break}
+  case 'rename':{if(c.actor){let ch=p.characters.find(x=>x.id===c.actor);if(!ch)throw Error('Không có nhân vật '+c.actor);if(c.name!==undefined)ch.name=c.name;if(c.desc!==undefined)ch.desc=c.desc}else{let o=p.objects?.[c.index];if(!o)throw Error('Không có vật thể '+c.index);if(c.name)o.name=c.name;if(c.desc!==undefined)o.desc=c.desc}break}
   case 'duration':p.duration=c.value;break;case 'fps':p.fps=c.value;break;
   case 'pose':t=at(c);applyPose(p,c.actor,c.name,t,{ease:c.ease||'smooth',ground:c.ground!==false});ends[c.actor]=t;break;
   case 'joints':t=at(c);applyJoints(p,c.actor,t,c.joints,{ease:c.ease||'smooth',ground:c.ground===true,hands:c.hands});ends[c.actor]=t;break;
@@ -231,6 +244,10 @@ export function runCommands(input,commands){let p=input?migrate(input):newProjec
   case 'reach':t=at(c);r=reach(p,c.actor,c.limb,c.target,t,c);if(!r.reached&&c.strict)throw Error(`không với tới (thiếu ${r.error}m)`);break;
   case 'approach':t=at(c);r=approach(p,c.actor,c.target,t,c);ends[c.actor]=r.end;break;
   case 'allowContact':allowContact(p,c);break;
+  case 'grab':t=at(c);r=grabObject(p,c.object,c.actor,c.joint||(c.hand==='L'?'L_wrist':'R_wrist'),t,c);break;
+  case 'release':t=at(c);r=releaseObject(p,c.object,t,c);break;
+  case 'drop':t=at(c);r=dropObject(p,c.object,t,c);break;
+  case 'snapToHand':t=at(c);r=snapToHand(p,c.object,t);break;
   default:throw Error('op không có: '+c.op+' (dùng '+COMMANDS.join('/')+')')}results.push({i,op:c.op,ok:true,...(r&&typeof r==='object'?r:r!=null?{result:r}:{})})}catch(e){results.push({i,op:c.op,ok:false,error:e.message})}});
  return {project:p,results}}
 // Fluent wrapper for JS agents: new Studio().character('A',{...}).motion('A','walk',{at:0,distance:2}).toJSON()
@@ -278,9 +295,142 @@ export function bakeProject(input,{tolDeg=.1,tolPos=.0005}={}){let p=migrate(inp
   let add=(joint,axis,vals,rest,tol)=>{if(vals.every(v=>Math.abs(v-rest)<1e-9))return;let idx=vals.every(v=>Math.abs(v-vals[0])<tol)?[0]:rdp([vals],[tol]);tracks.push({actor:c.id,joint,axis,keys:idx.map((i,k)=>k?[T(i),+vals[i].toFixed(4),'linear']:[T(i),+vals[i].toFixed(4)])})};
   ['x','y','z'].forEach((ax,k)=>add('$root',ax,P.map(l=>l.pos[k]),c.position[k],tolPos));add('$root','yaw',unwrap(P.map(l=>l.yaw)),c.yaw||0,tolDeg*.5);
   for(let j of JOINTS)for(let k=0;k<3;k++)add(j,'xyz'[k],unwrap(P.map(l=>(l.rot[j]||[0,0,0])[k])),0,tolDeg)}
- for(let tr of p.tracks)if(tr.actor.startsWith('@object:'))tracks.push(clone(tr));
+ (p.objects||[]).forEach((o,i)=>{let mine=p.tracks.filter(tr=>tr.actor==='@object:'+i);if(!mine.some(isAttachTrack)){for(let tr of mine)tracks.push(clone(tr));return}
+  let tfs=[];for(let f=0;f<=F;f++)tfs.push(propTransform(p,i,f/fps));let add=(axis,vals,tol)=>{let idx=vals.every(v=>Math.abs(v-vals[0])<tol)?[0]:rdp([vals],[tol]);tracks.push({actor:'@object:'+i,joint:'$root',axis,keys:idx.map((j,k)=>k?[T(j),+vals[j].toFixed(4),'linear']:[T(j),+vals[j].toFixed(4)])})};
+  for(let k=0;k<3;k++){add('p'+'xyz'[k],tfs.map(x=>x.pos[k]),tolPos);add('r'+'xyz'[k],unwrap(tfs.map(x=>x.rotDeg[k])),tolDeg)}for(let tr of mine)if(/^s[xyz]$/.test(tr.axis))tracks.push(clone(tr))});
  let cams=p.cameraKeys?.length?[1,2,3,5,6,7].map(i=>{let ch=cameraChannel(p.cameraKeys,i),a=[];for(let f=0;f<=F;f++)a.push(sample(ch,f/fps));return a}):null,cameraKeys=cams?rdp(cams,[tolDeg,tolDeg,.002,.002,.002,.002]).map(i=>[T(i),...[0,1,2].map(c=>+cams[c][i].toFixed(4)),'linear',...[3,4,5].map(c=>+cams[c][i].toFixed(4))]):[];
- let out={version:'0.3',fps,duration:p.duration,characters:p.characters.map(c=>({id:c.id,position:c.position,yaw:c.yaw||0,...(c.color?{color:c.color}:{})})),objects:(p.objects||[]).map(o=>clone(o)),tracks,cameraKeys};
+ let out={version:'0.3',fps,duration:p.duration,characters:p.characters.map(c=>({id:c.id,...(c.name?{name:c.name}:{}),...(c.desc?{desc:c.desc}:{}),position:c.position,yaw:c.yaw||0,...(c.color?{color:c.color}:{})})),objects:(p.objects||[]).map(o=>clone(o)),tracks,cameraKeys};
  // verify through the plain (contact-free) evaluator
  let maxErr=0;for(let f=0;f<=F;f++)for(let c of p.characters){let a=fk(evalLocal(out,c.id,f/fps)).pos,b=fk(poses[c.id][f]).pos;for(let j in a)maxErr=Math.max(maxErr,Math.hypot(a[j][0]-b[j][0],a[j][1]-b[j][1],a[j][2]-b[j][2]))}
  return {project:out,intendedContacts:p.intendedContacts||[],report:{tracks:tracks.length,keys:tracks.reduce((n,t)=>n+t.keys.length,0),cameraKeys:cameraKeys.length,maxJointError_mm:+(maxErr*1000).toFixed(2),notes:p.notes||[]}}}
+
+// ================= v0.18: ai-brief.json — the scene written for another AI to understand and reproduce =================
+const BRIEF_LEVELS={standard:{dt:.1,joints:'body',rotations:false,source:false,label:'Chuẩn: 0.1 s, 21 khớp thân'},detailed:{dt:null,joints:'body',rotations:true,source:false,label:'Chi tiết: mỗi frame, 21 khớp + góc xoay'},max:{dt:null,joints:'all',rotations:true,source:true,label:'Tối đa: mỗi frame, 71 khớp + góc xoay + project gốc'}};
+export const briefLevels=()=>Object.fromEntries(Object.entries(BRIEF_LEVELS).map(([k,v])=>[k,v.label]));
+const KEY_JOINTS=['hips','chest','head','L_shoulder','R_shoulder','L_elbow','R_elbow','L_wrist','R_wrist','L_hip','R_hip','L_knee','R_knee','L_ankle','R_ankle'];
+const PART={'hips→spine':'pelvis','spine→chest':'torso','chest→neck':'upper chest','neck→head':'neck','head→head':'head'};
+const partName=seg=>{if(PART[seg])return PART[seg];if(/^[LR]_wrist→[LR]_finger$/.test(seg))return (seg[0]==='L'?'left':'right')+' hand';let m=/^([LR])_(\w+?)→[LR]_(\w+?)(?:\d_\d)?$/.exec(seg);if(!m)return seg;let s=m[1]==='L'?'left':'right',k=m[2]+'→'+m[3].replace(/\d.*$/,'');return `${s} ${({'shoulder→elbow':'upper arm','elbow→wrist':'forearm','hip→knee':'thigh','knee→ankle':'shin','ankle→toe':'foot'})[k]||k}`};
+const r3=v=>+v.toFixed(3),r1=v=>+v.toFixed(1),wrapDeg=a=>((a%360)+540)%360-180;
+// clip-time of the decisive moment of each library motion (scaled by the real beat length)
+const PEAK={punch:.38,kick:.5,swing_sword:.55,dodge:.26,block:.14,counter:1.06,spin:.55,draw_sword:.75,sheathe_sword:.7,sit_down:1,stand_up:1.05,fall:1.1,land:.18,jump:'apex'};
+const ATTACK=new Set(['punch','kick','swing_sword','counter']),DEFENSE={dodge:'evade',block:'guard',counter:'evade then strike'};
+function facingWords(p,actor,t,yaw){let me=evalLocal(p,actor,t),out=[];for(let c of p.characters){if(c.id===actor)continue;let o=evalLocal(p,c.id,t),d=Math.atan2(o.pos[0]-me.pos[0],o.pos[2]-me.pos[2])*180/Math.PI,diff=Math.abs(wrapDeg(d-yaw));out.push(diff<30?`faces ${c.id}`:diff>150?`back to ${c.id}`:`${c.id} is on his ${wrapDeg(d-yaw)>0?'left':'right'} (${Math.round(diff)}°)`)}return out.join(', ')||`facing ${Math.round(yaw)}°`}
+export function makeAiBrief(input,{level='detailed'}={}){const L=BRIEF_LEVELS[level]||BRIEF_LEVELS.detailed,p=migrate(input),fps=p.fps,dt=L.dt||1/fps,N=Math.floor(p.duration/dt+1e-9),T=i=>r3(i*dt);
+ const W=(id,t)=>{let l=evalPose(p,id,t);return {l,w:fk(l)}};
+ const jointsOf=L.joints==='all'?JOINTS:BODY_JOINTS;
+ const issues=checkMotion(p),rep=fullReport(p);
+ // cast & props
+ const cast=p.characters.map(c=>{let {l}=W(c.id,0);return {id:c.id,...(c.name?{name:c.name}:{}),...(c.desc?{desc:c.desc}:{}),color:c.color,heightM:1.88,start:{position:l.pos.map(r3),facingDeg:r1(l.yaw),facing:facingWords(p,c.id,0,l.yaw)}}});
+ const propTrack=(i,ax)=>p.tracks.find(t=>t.actor==='@object:'+i&&t.axis===ax);
+ const props=(p.objects||[]).map((o,i)=>{let tr=p.tracks.filter(t=>t.actor==='@object:'+i&&t.keys.length>1&&!isAttachTrack(t)&&varies(t)),anim=null;if(tr.length){let ts=tr.flatMap(t=>t.keys.map(k=>k[0]));anim={from:r3(Math.min(...ts)),to:r3(Math.max(...ts)),changes:[...new Set(tr.map(t=>({p:'position',r:'rotation',s:'size'})[t.axis[0]]))]}}
+  let holds=propHolds(p,i);return {index:i,name:objectName(o,i),...(o.desc?{desc:o.desc}:{}),...(holds.length?{holds:holds.map(h=>({from:h.from,to:h.to,by:h.by,part:h.joint}))}:{}),shape:'box',...(()=>{let t0=propTransform(p,i,0);return {sizeM:t0.size.map(r3),position:t0.pos.map(r3),rotationDeg:t0.rotDeg.map(r1)}})(),color:o.color,...(anim?{animated:anim}:{})}});
+ // camera
+ const cams=(p.cameraKeys?.length?p.cameraKeys:[[0,...DEFAULT_CAMERA.slice(0,3),'smooth',...DEFAULT_CAMERA.slice(3)]]).map((k,i,a)=>{let tgt=[k[5]??0,k[6]??1,k[7]??0],A=k[1]*Math.PI/180,E=k[2]*Math.PI/180,pos=[tgt[0]+Math.sin(A)*Math.cos(E)*k[3],tgt[1]+Math.sin(E)*k[3],tgt[2]+Math.cos(A)*Math.cos(E)*k[3]],prev=a[i-1],move='static';
+  if(prev){let da=k[1]-prev[1],dd=k[3]-prev[3];move=[Math.abs(da)>5?`orbit ${da>0?'left':'right'} ${Math.abs(Math.round(da))}°`:'',dd<-.4?'push in':dd>.4?'pull out':''].filter(Boolean).join(' + ')||'hold'}
+  return {t:r3(k[0]),shot:shot(k[3]),angle:angle(k[2]),side:side(k[1]),move,ease:k[4]||'smooth',azimuthDeg:r1(k[1]),elevationDeg:r1(k[2]),distanceM:r3(k[3]),target:tgt.map(r3),position:pos.map(r3)}});
+ // contacts between bodies (from the motion check)
+ const contacts=issues.filter(i=>i.code==='INTENDED_CONTACT'||i.code==='LIMB_COLLISION').map(i=>{let [x,y]=String(i.joint).split(' ↔ ');return {from:i.from,to:i.to,a:{actor:i.actor,part:partName(x)},b:{actor:i.other,part:partName(y)},depthM:r3(i.peak),intended:i.code==='INTENDED_CONTACT'}});
+ // planted feet
+ const feet={};for(let c of p.characters){feet[c.id]={};for(let s of ['L','R']){let tr=p.tracks.find(t=>t.actor===c.id&&t.joint===s+'_foot'&&t.axis==='contact'),iv=[];if(tr){let on=null;for(let i=0;i<=Math.round(p.duration*fps);i++){let t=i/fps,st=contactAt(tr.keys,t);if(st?.on&&on==null)on=t;if(!st?.on&&on!=null){iv.push([r3(on),r3(t)]);on=null}}if(on!=null)iv.push([r3(on),r3(p.duration)])}feet[c.id][s==='L'?'left':'right']=iv}}
+ // beats (from timeline notes; library motions get a decisive "peak" pose and a result)
+ const beats=(p.notes||[]).slice().sort((a,b)=>a.t-b.t).map(n=>{let from=r3(n.t),to=r3(n.until??n.t),b={from,to,...(n.actor?{actor:n.actor}:{}),...(n.motion?{action:n.motion}:{}),text:n.text};if(!n.actor)return b;
+  let times=[['start',from]];if(n.motion&&PEAK[n.motion]!=null&&to>from){let pk;if(PEAK[n.motion]==='apex'){let best=-1;for(let t=from;t<=to;t+=1/fps){let y=evalLocal(p,n.actor,t).pos[1];if(y>best){best=y;pk=t}}}else{let m=MOTIONS[n.motion],d=m?m.make({},{groundUp:()=>0}).duration:to-from;pk=from+(to-from)*Math.min(1,PEAK[n.motion]/d)}times.push(['peak',r3(pk)])}if(to>from)times.push(['end',to]);
+  let tPeak=(times.find(x=>x[0]==='peak')||times.at(-1))[1],others=p.characters.filter(c=>c.id!==n.actor).map(c=>{let a=fk(evalPose(p,n.actor,tPeak)).pos.hips,o=fk(evalPose(p,c.id,tPeak)).pos.hips;return {id:c.id,d:Math.hypot(a[0]-o[0],a[2]-o[2])}}).sort((x,y)=>x.d-y.d);
+  if(others.length)b.target=others[0].id;
+  b.keyPoses=times.map(([label,t])=>{let {l,w}=W(n.actor,t);let kp={label,t,root:l.pos.map(r3),facingDeg:r1(l.yaw),facing:facingWords(p,n.actor,t,l.yaw),joints:Object.fromEntries(KEY_JOINTS.map(j=>[j,w.pos[j].map(r3)])),distanceToM:Object.fromEntries(p.characters.filter(c=>c.id!==n.actor).map(c=>{let o=fk(evalPose(p,c.id,t)).pos.hips;return [c.id,r3(Math.hypot(w.pos.hips[0]-o[0],w.pos.hips[2]-o[2]))]}))};return kp});
+  if(n.motion&&ATTACK.has(n.motion)&&b.target){let def=(p.notes||[]).find(o=>o.actor===b.target&&o.motion&&['block','dodge'].includes(o.motion)&&o.t<=tPeak+1e-6&&(o.until??o.t)>=tPeak-1e-6);
+   // closest approach of the two bodies around the decisive moment: < 3 cm counts as contact
+   // striking limb = the hand / foot moving fastest at the decisive moment; impact = the defender part it reaches
+   let sp=j=>{let a=fk(evalPose(p,n.actor,tPeak-1/fps)).pos[j],c=fk(evalPose(p,n.actor,tPeak+1/fps)).pos[j];return Math.hypot(a[0]-c[0],a[1]-c[1],a[2]-c[2])};
+   let limb=['L_wrist','R_wrist','L_ankle','R_ankle'].sort((x,y)=>sp(y)-sp(x))[0],strike=limb.endsWith('wrist')?[limb,limb[0]+'_finger2_0']:[limb,limb[0]+'_toe2_0'];b.strikingLimb=limb;
+   let partMin={},best={d:9};for(let t=Math.max(from,tPeak-.12);t<=Math.min(to,tPeak+.18)+1e-9;t+=1/fps){let A=fk(evalPose(p,n.actor,t)).pos,B=fk(evalPose(p,b.target,t)).pos;for(let [p1,q1,r1] of SEG){let d=segDist(A[strike[0]],A[strike[1]],B[p1],B[q1])-r1-.045,key=p1+'→'+q1;if(!(key in partMin)||d<partMin[key])partMin[key]=d;if(d<best.d)best={d,t,A:strike[0]+'→'+strike[1].replace(/finger2_0/,'finger').replace(/toe2_0/,'toe2_0'),B:key}}}
+   b.closestApproachM=r3(Math.max(0,best.d));
+   let planned=(p.intendedContacts||[]).some(ic=>ic.from<=tPeak+.2&&ic.to>=tPeak-.2&&(!ic.actors||(ic.actors.includes(n.actor)&&ic.actors.includes(b.target))));b.planned=planned;
+   if(best.d<(planned?.05:.01)){let mine=partName(best.A),theirs=partName(best.B),arm=/forearm|upper arm|hand/.test(theirs);b.result=def?.motion==='block'&&arm?'blocked':def?.motion==='dodge'&&arm?'dodged':'hit';b.impact={t:r3(best.t),with:mine,on:`${b.target} ${theirs}`,depthM:r3(Math.max(0,-best.d)),...(b.result==='dodged'?{graze:true}:{})};let also=Object.entries(partMin).filter(([k,d])=>k!==best.B&&d<(planned?.05:.01)&&d-best.d<.03).map(([k])=>`${b.target} ${partName(k)}`);if(also.length)b.impact.alsoTouches=[...new Set(also)]}else b.result=def?.motion==='dodge'?'dodged':'miss';
+   if(def)b.defense={actor:def.actor,action:def.motion}}
+  else if(n.motion&&DEFENSE[n.motion])b.result=DEFENSE[n.motion];else if(n.motion==='fall')b.result='knocked down';
+  return b});
+ // dense trajectory
+ const traj={dt:+dt.toFixed(6),...(L.dt?{}:{fps,note:'one sample per frame: t[i] = i / fps'}),samples:N+1,t:Array.from({length:N+1},(_,i)=>T(i)),joints:jointsOf,characters:{}};
+ for(let c of p.characters){let root=[],pos=Object.fromEntries(jointsOf.map(j=>[j,[]])),rot=L.rotations?Object.fromEntries(jointsOf.map(j=>[j,[]])):null;
+  for(let i=0;i<=N;i++){let {l,w}=W(c.id,i*dt);root.push([...l.pos.map(r3),r1(l.yaw)]);for(let j of jointsOf){pos[j].push(w.pos[j].map(r3));if(rot)rot[j].push((l.rot[j]||[0,0,0]).map(r1))}}
+  traj.characters[c.id]={root_xyz_yaw:root,worldPosition:pos,...(rot?{localRotationDeg:rot}:{})}}
+ let propTraj={};(p.objects||[]).forEach((o,i)=>{let tr=p.tracks.filter(t=>t.actor==='@object:'+i);if(!tr.some(t=>t.keys.length>1||isAttachTrack(t)))return;if(tr.some(isAttachTrack)){let tf=traj.t.map((t,k)=>propTransform(p,i,k*dt));propTraj[objectName(o,i)]={position:tf.map(x=>x.pos.map(r3)),rotationDeg:tf.map(x=>x.rotDeg.map(r1)),sizeM:tf.map(x=>x.size.map(r3)),heldBy:tf.map(x=>x.held?`${x.held.to}:${x.held.joint}`:null)};return}let g=(ax,d)=>{let t=tr.find(x=>x.axis===ax);return t?tt=>sample(t.keys,tt):()=>d};let P=[0,1,2].map(k=>g('p'+'xyz'[k],o.position[k])),Rr=[0,1,2].map(k=>g('r'+'xyz'[k],0)),S=[0,1,2].map(k=>g('s'+'xyz'[k],o.size[k]));
+  propTraj[objectName(o,i)]={position:traj.t.map(t=>P.map(f=>r3(f(t)))),rotationDeg:traj.t.map(t=>Rr.map(f=>r1(f(t)))),sizeM:traj.t.map(t=>S.map(f=>r3(f(t))))}});
+ if(Object.keys(propTraj).length)traj.props=propTraj;
+ const brief={format:'ai-motion-studio/ai-brief',version:1,app:APP_VERSION,detail:{level,description:L.label},
+  howToRead:['Units: metres, seconds, degrees. World axes: +Y up, floor at y=0. A character with yaw 0° faces +Z; yaw +90° faces +X.',
+   'Characters are 1.88 m mannequins. "root" is the point between the feet on the floor; "hips" is ~0.94 m above it. Joint names: L_ = the character\'s own left.',
+   'cast/props: who and what is in the scene (name + desc = how it should look). Each prop is a box of sizeM at position (centre). props[].holds = time ranges when a character holds it (part = joint: R_wrist right hand, L_wrist left hand, chest back, hips hip); after a hold ends the prop is released (it falls / stays where trajectory.props says).',
+   'beats: the action timeline. keyPoses give world positions of the main joints at start / peak (decisive moment) / end; result = hit | blocked | miss | dodged | evade | guard | knocked down. strikingLimb = the hand/foot delivering the attack; impact = what it touched first; alsoTouches = other parts touched at the same moment (within 3 cm); graze:true = only brushed the defender\'s arm while dodging.',
+   'contacts: body parts touching between characters (intended = planned hit). feetOnGround: time ranges when each foot is planted (no sliding).',
+   'camera: shot description plus exact numbers; position = where the camera is, target = what it looks at; vertical FOV 42°.',
+   'trajectory: dense motion — for every sample time t[i], worldPosition[joint][i] = [x,y,z]; root_xyz_yaw[i] = root position + facing; localRotationDeg = joint Euler XYZ relative to its parent (rig in motion-schema.json).',
+   'Reproduce or describe the motion from trajectory/keyPoses; do not invent extra actions. Timing in seconds is exact.'],
+  scene:{durationS:p.duration,fps,floorY:0,characters:p.characters.length,props:(p.objects||[]).length},
+  cast,props,camera:{fovVerticalDeg:42,keys:cams},beats,contacts,feetOnGround:feet,
+  validation:{errors:rep.summary.errors,warnings:rep.summary.warnings,issues:[...rep.validation.errors,...rep.validation.warnings,...rep.motion.filter(i=>i.code!=='INTENDED_CONTACT').map(i=>`${i.from}–${i.to}s ${i.message}`)]},
+  trajectory:traj};
+ if(L.source)brief.sourceProject=p;
+ return brief}
+// Readable but compact: one line per joint series / list item
+export function stringifyBrief(b){return JSON.stringify(b,(k,v)=>v,1).replace(/\[\s+([-\d.,\s"a-zA-Z_]+?)\s+\]/g,(m,inner)=>'['+inner.replace(/\s+/g,'')+']').replace(/\[\s*\n\s*(\[[^\[\]]*\](?:,\s*\n\s*\[[^\[\]]*\])*)\s*\n\s*\]/g,(m,inner)=>'['+inner.replace(/\s*\n\s*/g,'')+']')}
+
+// ================= v0.19: grab / release / drop props =================
+const varies=t=>{let v=t.keys.map(k=>k[1]).filter(Number.isFinite);return v.length>1&&Math.max(...v)-Math.min(...v)>1e-6};
+export const HOLD_JOINTS={R_wrist:'tay phải',L_wrist:'tay trái',chest:'lưng / ngực',hips:'hông',head:'đầu'};
+const QL=QT;
+function propIndex(p,ref){if(Number.isInteger(ref))return ref;let i=(p.objects||[]).findIndex((o,k)=>objectName(o,k)===ref);if(i<0)throw Error('Không tìm thấy vật thể '+ref);return i}
+// Attach prop i to a character joint at time t, keeping its current world pose (the grip = where you placed it).
+export function grabObject(p,i,actor,joint,t,{handPreset='auto'}={}){i=propIndex(p,i);t=snap(p,t);if(!p.characters.some(c=>c.id===actor))throw Error('Không có nhân vật '+actor);if(!JOINTS.includes(joint))throw Error('Khớp cầm không hợp lệ '+joint);
+ let tf=propTransform(p,i,t),w=fk(evalPose(p,actor,t)),jp=w.pos[joint],jq=w.q[joint],inv=QL.inv(jq),d=[tf.pos[0]-jp[0],tf.pos[1]-jp[1],tf.pos[2]-jp[2]];
+ let offset=QL.rot(inv,d).map(v=>+v.toFixed(4)),rot=QL.toEuler(QL.mul(inv,tf.q)).map(v=>+(v/R).toFixed(2));
+ setKey(p,'@object:'+i,'$root','attach',t,{to:actor,joint,offset,rot});
+ if(handPreset&&/_wrist$/.test(joint))applyHand(p,actor,joint[0],handPreset==='auto'?'sword':handPreset,t);
+ return {offset,rot,distanceM:+Math.hypot(...d).toFixed(3)}}
+// Release at time t: the prop stays exactly where it left the hand (keys px..rz written at t); animate the fall yourself or use dropObject.
+export function releaseObject(p,i,t,{handPreset='auto'}={}){i=propIndex(p,i);t=snap(p,t);let held=attachAt(p,i,t);if(!held)throw Error('Vật thể đang không được cầm');let tf=propTransform(p,i,t);
+ setKey(p,'@object:'+i,'$root','attach',t,null);let a='@object:'+i,cur=evalAxis=>{let tr=findTrack(p,a,'$root',evalAxis);return tr?sample(tr.keys,t):null};
+ for(let k=0;k<3;k++){setKey(p,a,'$root','p'+'xyz'[k],t,+tf.pos[k].toFixed(4),'smooth');let c=cur('r'+'xyz'[k]),v=tf.rotDeg[k];if(c!=null)v+=Math.round((c-v)/360)*360;setKey(p,a,'$root','r'+'xyz'[k],t,+v.toFixed(2),'smooth')}
+ if(handPreset&&/_wrist$/.test(held.joint))applyHand(p,held.to,held.joint[0],handPreset==='auto'?'open':handPreset,t);
+ return {t,position:tf.pos.map(v=>+v.toFixed(3)),from:held}}
+// Release + a physically plausible fall to the floor (gravity, small bounce, lands flat on its widest face). Edit the keys afterwards.
+export function dropObject(p,i,t,{bounce=true}={}){i=propIndex(p,i);t=snap(p,t);let dt=1/p.fps,before=propTransform(p,i,Math.max(0,t-dt)),tf=propTransform(p,i,t);let rel=releaseObject(p,i,t);
+ let size=tf.size,vAx=[0,1,2].reduce((m,k)=>size[k]<size[m]?k:m,0),rest=size[vAx]/2,base=vAx===1?[0,0,0,1]:vAx===0?QL.euler(0,0,Math.PI/2):QL.euler(-Math.PI/2,0,0);
+ let L=[0,1,2].reduce((m,k)=>size[k]>size[m]?k:m,0),ax=[0,0,0];ax[L]=1;let now=QL.rot(tf.q,ax),d0=QL.rot(base,ax),yaw=Math.atan2(now[0],now[2])-Math.atan2(d0[0],d0[2]);if(Math.hypot(now[0],now[2])<1e-3)yaw=0;
+ let qEnd=QL.mul(QL.euler(0,yaw,0),base),eEnd=QL.toEuler(qEnd).map(v=>v/R);
+ let h=Math.max(.02,tf.pos[1]-rest),T=Math.max(.12,Math.sqrt(2*h/9.8)),vx=(tf.pos[0]-before.pos[0])/dt,vz=(tf.pos[2]-before.pos[2])/dt,sp=Math.hypot(vx,vz),k=sp>1e-6?Math.min(1.2,sp*T*.6)/sp:0,land=[tf.pos[0]+vx*k,rest,tf.pos[2]+vz*k],a='@object:'+i,t1=t+T;
+ const GRAV='cubic-bezier(0.333,0,0.667,0.333)';
+ setKey(p,a,'$root','px',t1,+land[0].toFixed(4),'linear');setKey(p,a,'$root','pz',t1,+land[2].toFixed(4),'linear');setKey(p,a,'$root','py',t1,+rest.toFixed(4),GRAV);
+ for(let k=0;k<3;k++){let tr=findTrack(p,a,'$root','r'+'xyz'[k]),c=sample(tr.keys,t),v=eEnd[k];v+=Math.round((c-v)/360)*360;setKey(p,a,'$root','r'+'xyz'[k],t1,+v.toFixed(2),'easeIn')}
+ if(bounce&&h>.15){let up=Math.min(.06,h*.08);setKey(p,a,'$root','py',t1+.12,+(rest+up).toFixed(4),'easeOut');setKey(p,a,'$root','py',t1+.24,+rest.toFixed(4),'easeIn');let sx=vx*k*.08,sz=vz*k*.08;setKey(p,a,'$root','px',t1+.24,+(land[0]+sx).toFixed(4),'easeOut');setKey(p,a,'$root','pz',t1+.24,+(land[2]+sz).toFixed(4),'easeOut')}
+ if(t1+.3>p.duration)p.duration=Math.min(600,Math.ceil(t1+.3));
+ return {...rel,landAt:+(t1).toFixed(3),landing:[land[0],rest,land[2]].map(v=>+v.toFixed(3))}}
+// Hold intervals of prop i: [{from,to,by,joint}]
+export function propHolds(p,i){let tr=p.tracks.find(x=>x.actor==='@object:'+i&&x.axis==='attach');if(!tr)return [];let out=[],cur=null;for(let k of tr.keys){if(cur){cur.to=k[0];out.push(cur);cur=null}if(k[1]&&k[1].to)cur={from:k[0],by:k[1].to,joint:k[1].joint}}if(cur){cur.to=p.duration;out.push(cur)}return out.map(h=>({...h,from:+h.from.toFixed(3),to:+h.to.toFixed(3),part:HOLD_JOINTS[h.joint]||h.joint}))}
+
+// Snap the active grip: the prop's longest side runs across the fist (joint local +X), handle end in the palm.
+export function snapToHand(p,i,t){i=propIndex(p,i);let held=attachAt(p,i,t);if(!held)throw Error('Vật thể đang không được cầm');let tf=propTransform(p,i,t),size=tf.size,L=[0,1,2].reduce((m,k)=>size[k]>size[m]?k:m,0);
+ let rot=L===0?[0,0,0]:L===1?[0,0,-90]:[0,90,0],len=size[L],grip=/_wrist$/.test(held.joint)?[0,-.085,.012]:[0,0,.12],offset=[grip[0]+Math.max(0,len/2-.09),grip[1],grip[2]].map(v=>+v.toFixed(4));
+ let tr=p.tracks.find(x=>x.actor==='@object:'+i&&x.axis==='attach'),k=tr.keys.find(k=>Math.abs(k[0]-held.from)<1e-9);k[1]={...k[1],offset,rot};return {offset,rot}}
+
+// ================= v0.20: personal library — poses + clips reused across projects =================
+// File/localStorage shape: {type:'ams-my-library',version:1,poses:{name:{label,joints,hands?}},motions:{name:clip}}
+const sameJSON=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+export function newLibrary(){return {type:'ams-my-library',version:1,poses:{},motions:{}}}
+export function normLibrary(x){if(!x||typeof x!=='object'||Array.isArray(x))throw Error('Không phải file thư viện');if(x.characters||x.tracks)throw Error('Đây là file cảnh (project), không phải thư viện');let L=newLibrary(),n=0;
+ for(let [k,v] of Object.entries(x.poses||{}))if(v&&typeof v.joints==='object'){L.poses[k]={...v,label:v.label||k};n++}
+ for(let [k,v] of Object.entries(x.motions||{}))if(Number.isFinite(v?.duration)&&v.duration>0&&v.channels&&typeof v.channels==='object'){L.motions[k]={...v,label:v.label||k};n++}
+ if(!n&&(x.poses||x.motions)===undefined)throw Error('Không phải file thư viện');return L}
+// Put an item under a free name (never shadows a built-in; same content = same name). Returns the name used.
+export function libPut(lib,kind,name,item){let builtIn=kind==='poses'?POSES:MOTIONS,base=String(name||'').trim()||(kind==='poses'?'Tư thế':'Đòn'),n=base,i=2,body=it=>({...it,label:undefined});
+ while(builtIn[n]||(lib[kind][n]&&!sameJSON(body(lib[kind][n]),body(item))))n=`${base} (${i++})`;lib[kind][n]={...clone(item),label:n};return n}
+export function mergeLibrary(dst,src){let L=normLibrary(src),added=0,same=0;for(let kind of ['poses','motions'])for(let [k,v] of Object.entries(L[kind])){let had=Object.keys(dst[kind]).length,n=libPut(dst,kind,k,v);Object.keys(dst[kind]).length>had?added++:same++}return {added,same}}
+// Snapshot a character's pose at t. rot (optional) = what the editor shows, {joint:[x,y,z]} in degrees.
+export function capturePose(p,actor,t,{rot,label}={}){let l=evalLocal(p,actor,t);if(!l)throw Error('Không có nhân vật: '+actor);rot=rot||l.rot;let joints={},hands={},put=j=>{let v=rot[j]||[0,0,0];if(v.some(x=>Math.abs(x)>1e-3))joints[j]=v.map(x=>+(+x).toFixed(2))};
+ for(let j of BODY_JOINTS)put(j);
+ for(let s of ['L','R']){let fj=fingerJoints(s),explicit=p.tracks.some(tr=>tr.actor===actor&&fj.includes(tr.joint));if(explicit)fj.forEach(put);else hands[s]=presetAt(p,actor,s,t)||'open'}
+ return {label:label||'Tư thế',joints,...(Object.keys(hands).length?{hands}:{})}}
+// Copy a personal clip into the project library (so the exported JSON is self-contained). Returns the project key.
+export function useLibMotion(p,clip,name){p.library=p.library||{};p.library.motions=p.library.motions||{};let m=p.library.motions,base=String(name).trim(),n=base,i=2,body=c=>({...c,label:undefined});
+ while(MOTIONS[n]||(m[n]&&!sameJSON(body(m[n]),body(clip))))n=`${base} (${i++})`;if(!m[n])m[n]={...clone(clip),label:n};return n}

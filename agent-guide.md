@@ -32,7 +32,7 @@ node ams-cli.mjs prompt project.json 16:9       # prompt cho Higgsfield / Google
 Khi cần tính toán (tìm khoảng cách, chọn chân đá…), viết script Node dùng SDK:
 
 ```js
-const L = await import('./library.js?v=0.16'), C = await import('./core.js?v=0.16');
+const L = await import('./library.js?v=0.20'), C = await import('./core.js?v=0.20');
 let {project:p, results} = L.runCommands(null, [ /* lệnh */ ]);   // results[i].ok / .error / .start / .end
 L.worldAt(p,'A',t).pos.R_wrist   // toạ độ thế giới của một khớp
 L.inspect(p,t)                   // ảnh chụp nhanh cho agent
@@ -81,6 +81,7 @@ Trong trình duyệt có sẵn `window.ams.run([...])`, `ams.inspect(t)`, `ams.r
 - Key có dạng `[t, giá trị, ease?]`. Ease thuộc về đoạn **kết thúc tại** key đó. Trước key đầu giữ giá trị key đầu; sau key cuối giữ giá trị key cuối.
 - Ease hợp lệ: `smooth` (mặc định), `linear`, `easeIn`, `easeOut`, `easeInOut`, `hold`, `strike` (tăng tốc dồn vào cú chạm), `overshoot` (nảy quá đà), `cubic-bezier(x1,y1,x2,y2)`.
 - Vật thể dùng actor `@object:<chỉ số>` (có `@`), joint `$root`, axis `px py pz rx ry rz sx sy sz`.
+- **Nhân vật** có `id` (khoá dùng trong tracks, ví dụ "A") và nên có `name` ("Kiếm sĩ áo đen") cùng `desc` (ngoại hình, trang phục, vũ khí). Prompt sẽ ghi `A = "Kiếm sĩ áo đen": …`.
 - **Mỗi vật thể phải có `name`** (tên ngắn, duy nhất, ví dụ "Ghế gỗ", "Cửa sắt") và nên có `desc` (mô tả hình dung: chất liệu, màu, kiểu dáng). Prompt video dùng hai trường này để AI tạo video biết mỗi khối hộp là gì. Track vẫn tham chiếu vật thể theo chỉ số, nên đổi tên không làm hỏng chuyển động.
 - Contact: `1` là chân chạm đất (khoá vị trí và hướng); `2` là xoay trên mũi chân (khoá vị trí, bàn chân xoay theo); `0` là nhấc chân. Khi thân xoay quá 15–40° lúc chân đang khoá, engine tự chuyển sang xoay mũi chân. Nhân vật có contact thì bàn chân không bao giờ lún xuống sàn.
 - Camera key: `[t, azimuth, elevation, distance, ease, targetX, targetY, targetZ]`.
@@ -95,7 +96,13 @@ Trong trình duyệt có sẵn `window.ams.run([...])`, `ams.inspect(t)`, `ams.r
 
 | op | Tham số chính | Việc làm |
 |---|---|---|
-| `character` / `object` | id, position, yaw, color / **name, desc**, position, size, color | Tạo nhân vật / vật thể (vật thể luôn đặt tên + mô tả) |
+| `character` / `object` | id, **name, desc**, position, yaw, color / **name, desc**, position, size, color | Tạo nhân vật / vật thể. Luôn đặt tên + mô tả để prompt video mô tả đúng |
+| `grab` | object (tên hoặc chỉ số), actor, hand `R`/`L` hoặc joint (`R_wrist`, `L_wrist`, `chest`, `hips`, `head`), at | Nhân vật cầm vật thể từ mốc `at`; giữ nguyên tư thế hiện tại làm kiểu cầm, tự nắm tay |
+| `snapToHand` | object, at | Đặt vật thể khít vào nắm tay của lần cầm đang diễn ra |
+| `release` | object, at | Thả: vật thể dừng đúng chỗ rời tay (ghi key px..rz); tự keyframe đường rơi sau đó |
+| `drop` | object, at | Thả + đường rơi theo trọng lực xuống sàn, nảy nhẹ, nằm phẳng (chỉnh lại sau) |
+| `rename` | actor (hoặc index của vật thể), name, desc | Đổi tên / mô tả nhân vật hoặc vật thể; id nhân vật giữ nguyên |
+| `removeObject` | index hoặc name | Xoá vật thể; track của các vật thể sau tự đánh số lại |
 | `pose` | actor, name, at, ease, ground=true | Đặt tư thế thư viện; tự hạ cho chạm sàn |
 | `motion` | actor, name, at, speed, duration, distance, direction, height, side, note | Chèn chuyển động; tự khoá chân và tự thêm ghi chú |
 | `approach` | actor, target, at, distance=0.9, run | Đi/chạy tới cách mục tiêu `distance` m (tính hông-hông), rồi quay mặt về mục tiêu |
@@ -130,6 +137,34 @@ Trong trình duyệt có sẵn `window.ams.run([...])`, `ams.inspect(t)`, `ams.r
 - `jump`, `run`, `walk`
 - `sword_ready`, `sword_raise`
 - `point`, `wave`, `victory`
+
+## 5b. ai-brief.json: gửi cảnh cho AI khác
+
+`node ams-cli.mjs brief project.json ai-brief.json [standard|detailed|max]`, hoặc nút **Xuất ai-brief.json** ở tab Xuất.
+
+File này viết cho AI đọc hiểu, không phải để nhập vào web. Nội dung:
+- **cast / props:** tên, mô tả, màu, kích thước, vị trí.
+- **beats:** ai làm gì với ai; `result` là hit / blocked / miss / dodged…; `impact` ghi bộ phận chạm bộ phận nào; `keyPoses` cho toạ độ thế giới của 15 khớp chính lúc start / peak / end, kèm hướng nhìn bằng lời và khoảng cách.
+- **contacts, feetOnGround, camera:** cỡ cảnh, góc máy, chuyển động, kèm số.
+- **trajectory:** toạ độ từng khớp theo thời gian; có thêm góc xoay cục bộ ở mức detailed/max.
+
+Mức `max` nhúng cả project gốc. Khi viết prompt hoặc tái hiện cảnh, hãy dựa vào `beats` và `trajectory`, không thêm hành động ngoài dữ liệu.
+
+## 5c. Cầm và thả vật thể
+
+Track `{"actor":"@object:i","joint":"$root","axis":"attach","keys":[[t,{"to":"A","joint":"R_wrist","offset":[x,y,z],"rot":[x,y,z]}],[t2,null]]}`:
+- `null` nghĩa là tự do; lúc tự do vật thể dùng các track px..rz.
+- `offset` / `rot` là kiểu cầm, tính theo hệ trục của khớp.
+
+Dùng lệnh `grab` / `release` / `drop` thay vì tự tính offset. Bake ra v0.11 sẽ đổi phần cầm thành chuyển động vị trí/góc từng frame. Kiểm tra `PROP_UNDER_FLOOR` báo khi vật thể xuyên sàn.
+
+**Gửi lệnh cho người dùng:** người dùng có thể dán thẳng một mảng lệnh `[{"op":…}]` (hoặc `{"commands":[…]}`) vào **Bảng JSON** trên web, bấm "Nạp vào cảnh" để áp vào cảnh đang mở. Vì vậy khi chat, hãy trả lệnh dưới dạng JSON thuần.
+
+## 5d. Đòn của người dùng (`library.motions`)
+
+- Người dùng lưu đòn/tư thế vào "Thư viện của anh" trên web. Đòn nào được dùng trong cảnh thì được chép nguyên vào `project.library.motions["<tên>"]` (clip tương đối: `duration`, `channels`). Ghi chú nhịp có `motion:"<tên>"`.
+- AI dùng lại đòn đó bằng `{op:"motion", actor, name:"<tên>", at, speed|duration, side:"L"}` (`side:"L"` = lật trái↔phải). Không sửa clip trong library, chỉnh keyframe sau khi chèn.
+- File `my-library.json` (`type:"ams-my-library"`) chỉ là thư viện, không phải cảnh: dán vào bảng JSON hoặc kéo thả vào web sẽ gộp vào thư viện.
 
 ## 6. Đọc báo cáo kiểm tra và cách sửa
 

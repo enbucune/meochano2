@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="vi">
 <meta charset="utf-8">
-<meta name="app-version" content="0.16">
+<meta name="app-version" content="0.20">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AI Motion Studio</title>
 <style>
@@ -23,6 +23,10 @@ kbd{font:11px ui-monospace,Menlo,monospace;background:var(--panel2);border:1px s
 .keybtn{background:#8b2532;border-color:var(--key)}
 .keybtn:hover:not(:disabled){background:#a12d3c}
 .quiet{background:transparent}
+.danger{background:#45232c;border-color:#8f4250;color:#ffc2c9}
+.danger:hover:not(:disabled){background:#5a2a35}
+.tag{font-size:11px;font-weight:500;color:var(--text);background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:4px;letter-spacing:0;text-transform:none}
+.charLabel{border-style:dashed}
 .icon{width:30px;padding:0;text-align:center}
 .wide{width:100%}
 .toggle{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;margin:0;user-select:none}
@@ -56,6 +60,18 @@ canvas{display:block;touch-action:none}
 .seg.dim:hover{opacity:1}
 textarea{font:inherit;color:var(--text);background:var(--panel3);border:1px solid var(--line);border-radius:6px;padding:6px;width:100%;resize:vertical;margin:0}
 #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+#refLayer{position:absolute;inset:0;pointer-events:none;opacity:.45}
+#refLayer>video,#refLayer>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none}
+#refLayer.video>video,#refLayer.image>img{display:block}
+#refLayer.flip>video,#refLayer.flip>img{transform:scaleX(-1)}
+#refLayer.out{visibility:hidden}
+.viewport.drop::after{content:"Thả video / ảnh để làm tham chiếu · thả .json để mở cảnh";position:absolute;inset:8px;border:2px dashed var(--accent);border-radius:10px;display:grid;place-items:center;background:rgba(10,16,23,.6);color:var(--text);font-size:14px;pointer-events:none}
+#myLib{display:grid;gap:3px;max-height:220px;overflow:auto}
+#myLib .li{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:5px;background:var(--panel3)}
+#myLib .li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#myLib .li small{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+#myLib .li button{height:22px;padding:0 7px;width:auto;flex:none}
+#myLib .li small{flex:none;white-space:nowrap}
 .objLabel{position:absolute;transform:translate(-50%,calc(-100% - 6px));font-size:11px;line-height:16px;white-space:nowrap;color:var(--text);background:rgba(10,16,23,.82);border:1px solid var(--line);border-left:3px solid var(--c,#8da0b6);padding:0 6px;border-radius:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis}
 .objLabel.on{border-color:var(--sel);color:var(--sel)}
 .legendRow{cursor:pointer}.legendRow:hover{background:var(--panel2)}
@@ -127,6 +143,14 @@ textarea{font:inherit;color:var(--text);background:var(--panel3);border:1px soli
 #info{font-size:12px;color:var(--muted);white-space:pre-wrap;margin:0}
 #backupStatus{margin-top:2px}
 
+/* JSON dialog */
+#jsonDlg{width:min(1000px,96vw)}
+.jsonbody{padding:10px 16px 14px;display:grid;gap:8px}
+.jsonbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.jsonbar .spacer{flex:1}
+#jsonInfo{max-width:62%}
+#jsonInfo.err{color:var(--err)}#jsonInfo.ok{color:#8fe3a8}
+#jsonText{height:min(58vh,560px);font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;overflow:auto;resize:vertical;tab-size:2}
 /* help dialog */
 dialog{background:var(--panel);color:var(--text);border:1px solid var(--line2);border-radius:10px;padding:0;width:min(720px,94vw);max-height:86vh}
 dialog::backdrop{background:rgba(0,0,0,.55)}
@@ -149,11 +173,12 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 </style>
 
 <header class="topbar">
- <div class="brand">AI Motion Studio<small>v0.16</small></div>
+ <div class="brand">AI Motion Studio<small>v0.20</small></div>
  <div class="grp">
   <label class="button" for="upload" title="Mở file project JSON">Mở</label>
   <input id="upload" type="file" accept=".json">
   <button id="download" title="Lưu project JSON (tự tối ưu, chuyển động giữ nguyên)">Lưu JSON</button>
+  <button id="jsonBtn" title="Bảng JSON: sao chép ra / dán vào">{ } JSON</button>
  </div>
  <span class="sep"></span>
  <div class="grp">
@@ -173,6 +198,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
  <section class="stage">
   <div class="viewport">
    <div id="view"></div>
+   <div id="refLayer" hidden><video id="refVideo" muted playsinline preload="auto"></video><img id="refImg" alt=""></div>
    <div class="toolbar">
     <div class="seg" id="toolSeg" role="group" aria-label="Công cụ">
      <button data-tool="camera">Camera<kbd>1</kbd></button>
@@ -190,6 +216,8 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
      <button data-cam="fly">Bay<kbd>7</kbd></button>
      <button id="homeCamera" title="Góc nhìn mặc định (H)">⌂</button>
     </div>
+    <div class="seg"><button id="refBtn" title="Video / ảnh tham chiếu (B) · kéo thả file vào khung 3D">🎞 Tham chiếu<kbd>B</kbd></button></div>
+    <div class="seg"><button id="addObj" title="Thêm vật thể mới tại điểm camera đang nhìn">＋ Vật thể</button></div>
    </div>
    <div id="labels" aria-hidden="true"></div>
    <p id="navHint">Kéo trái để xoay quanh điểm nhìn · kéo phải hoặc Shift + kéo để dịch · cuộn để zoom</p>
@@ -235,10 +263,28 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <div class="tabbody">
 
    <section class="tab" data-tab="edit">
+    <div class="card" id="charCard" hidden><h4>Nhân vật <span id="charId" class="tag"></span></h4>
+     <div class="stack">
+      <label class="field">Tên hiển thị<input id="charName" type="text" maxlength="60" placeholder="vd: Kiếm sĩ áo đen"></label>
+      <label class="field">Mô tả cho AI tạo video<textarea id="charDesc" rows="2" maxlength="400" placeholder="ngoại hình, trang phục, vũ khí… vd: nam, áo choàng đen, tóc buộc cao, cầm kiếm"></textarea></label>
+     </div>
+    </div>
     <div class="card" id="objCard" hidden><h4>Vật thể</h4>
      <div class="stack">
       <label class="field">Tên<input id="objName" type="text" maxlength="60" placeholder="vd: Ghế gỗ, Cửa sắt, Thanh kiếm"></label>
       <label class="field">Mô tả cho AI tạo video<textarea id="objDesc" rows="2" maxlength="300" placeholder="chất liệu, màu, kiểu dáng… vd: ghế gỗ sồi lưng cao, sơn nâu"></textarea></label>
+      <div class="row"><button id="dupObj" title="Tạo bản sao đứng cạnh">Nhân bản</button><button id="delObj" class="danger" title="Xoá vật thể này (Ctrl+Z để hoàn tác)">Xoá vật thể</button></div>
+     </div>
+    </div>
+    <div class="card" id="holdCard" hidden><h4>Cầm / thả</h4>
+     <div class="stack">
+      <p class="hint" id="holdState">Tự do</p>
+      <select id="holdWho" aria-label="Ai cầm, bằng đâu"></select>
+      <div class="row"><button id="grabBtn" class="primary" title="Gắn vật thể vào khớp đã chọn từ mốc này, giữ nguyên vị trí hiện tại làm kiểu cầm">✊ Cầm tại mốc này</button><button id="releaseBtn" title="Thả tại mốc này: vật thể dừng đúng chỗ rời tay, anh tự keyframe đường rơi">Thả</button></div>
+      <button id="dropBtn" title="Thả và tự tạo đường rơi theo trọng lực xuống sàn (chỉnh lại keyframe sau)">⤓ Thả rơi xuống sàn</button>
+      <button id="snapGripBtn" title="Đặt vật thể nằm khít trong nắm tay (cạnh dài nằm ngang qua lòng bàn tay)">Đặt khít vào lòng bàn tay</button>
+      <label class="toggle"><input id="autoHand" type="checkbox" checked> Tự nắm tay khi cầm, mở tay khi thả</label>
+      <p class="hint">Khi đang cầm, kéo / xoay vật thể để chỉnh kiểu cầm (tự lưu).</p>
      </div>
     </div>
     <div class="card"><h4 id="jointCardTitle">Khớp</h4>
@@ -271,6 +317,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <select id="poseSel" aria-label="Tư thế"></select>
       <div class="row"><button id="applyPose" class="primary">Áp dụng <kbd>P</kbd></button><button id="mirrorPose">Lật trái↔phải <kbd>M</kbd></button></div>
       <label class="toggle"><input id="poseGround" type="checkbox" checked> Tự chạm sàn</label>
+      <button id="savePose" title="Lưu tư thế nhân vật đang chọn tại mốc này vào thư viện của anh">★ Lưu tư thế này</button>
      </div>
     </div>
     <div class="card"><h4>Chuyển động</h4>
@@ -288,6 +335,14 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <p class="hint" id="motionHint">Chọn nhân vật trước. Chuyển động nối từ tư thế hiện tại, tự khoá chân và ghi chú.</p>
      </div>
     </div>
+    <div class="card"><h4>Thư viện của anh</h4>
+     <div class="stack">
+      <div id="myLib"></div>
+      <p class="hint" id="myLibInfo">Chưa có gì. Lưu tư thế ở trên, hoặc chọn vùng trên timeline rồi bấm ★ Lưu chuyển động.</p>
+      <div class="row"><button id="myLibExport" title="Tải file my-library.json để giữ lâu / chuyển máy">Xuất file</button><label class="button" for="myLibFile" title="Nạp my-library.json (gộp vào thư viện hiện có)">Nạp file</label><input id="myLibFile" type="file" accept=".json,application/json" hidden></div>
+      <p class="hint">Lưu trong trình duyệt này, dùng được cho mọi cảnh. Khi dùng, đòn được chép vào JSON của cảnh để AI đọc được.</p>
+     </div>
+    </div>
    </section>
 
    <section class="tab" data-tab="scene">
@@ -298,15 +353,30 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <label class="field">Khoảng ghost trước / sau<select id="ghostGap"><option value="0.1">0,1 giây</option><option value="0.25" selected>0,25 giây</option><option value="0.5">0,5 giây</option><option value="1">1 giây</option></select></label>
      </div>
     </div>
+    <div class="card"><h4>Video tham chiếu</h4>
+     <div class="stack">
+      <div class="row"><label class="button" for="refFile">Chọn video / ảnh</label><input id="refFile" type="file" accept="video/*,image/*" hidden><button id="refClear" disabled>Bỏ</button></div>
+      <p class="hint" id="refInfo">Chưa có. Kéo thả file vào khung 3D cũng được.</p>
+      <label class="toggle"><input id="refShow" type="checkbox" disabled> Hiện <kbd>B</kbd></label>
+      <label class="field">Độ đậm<input id="refOpacity" type="range" min="10" max="90" step="5" value="45"></label>
+      <div class="grid2">
+       <label class="field">Mốc 0s ứng với giây<input id="refOffset" type="number" step="0.0333" value="0" title="Giây của video hiện ở mốc 0s trên timeline"></label>
+       <label class="field">Tốc độ video ×<input id="refRate" type="number" step="0.05" min="0.1" value="1" title="0.5 = video quay chậm gấp đôi so với cảnh"></label>
+      </div>
+      <div class="row"><button data-refnudge="-1" title="Dời video sớm hơn 1 giây">−1s</button><button data-refnudge="-f" title="Dời video sớm hơn 1 frame">−1f</button><button data-refnudge="+f" title="Dời video muộn hơn 1 frame">+1f</button><button data-refnudge="+1" title="Dời video muộn hơn 1 giây">+1s</button></div>
+      <label class="toggle"><input id="refFlip" type="checkbox"> Lật ngang</label>
+      <p class="hint">Chỉ để nhìn khi chỉnh: không lưu vào JSON, không ghi vào video xuất. Xoay camera cho khớp góc quay của video.</p>
+     </div>
+    </div>
     <div class="card"><h4>Hiển thị</h4>
      <div class="stack">
       <label class="toggle"><input id="showOutlines" type="checkbox" checked> Viền phân biệt đối tượng</label>
       <label class="toggle"><input id="showParts" type="checkbox" checked> Viền từng khớp, đốt ngón</label>
       <label class="toggle"><input id="detailResolution" type="checkbox" checked> Tăng độ nét (tối đa 1,5×)</label>
-      <label class="toggle"><input id="showLabels" type="checkbox" checked> Hiện tên vật thể trên khung 3D</label>
+      <label class="toggle"><input id="showLabels" type="checkbox" checked> Hiện tên nhân vật, vật thể trên khung 3D</label>
      </div>
     </div>
-    <div class="card"><h4>Đối tượng trong cảnh</h4><div id="legend" aria-label="Danh sách đối tượng"></div><p class="hint" style="margin-top:4px">Bấm để chọn · đặt tên vật thể ở tab Chỉnh</p></div>
+    <div class="card"><h4>Đối tượng trong cảnh</h4><div id="legend" aria-label="Danh sách đối tượng"></div><button id="addObj2" class="wide" style="margin-top:6px">＋ Thêm vật thể</button><p class="hint" style="margin-top:4px">Bấm để chọn · đặt tên, mô tả ở tab Chỉnh</p></div>
     <div class="card"><h4>Thời gian</h4>
      <div class="stack">
       <div class="grid2">
@@ -319,6 +389,14 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
    </section>
 
    <section class="tab" data-tab="export">
+    <div class="card"><h4>Gửi cho AI</h4>
+     <div class="stack">
+      <button id="jsonBtn2">{ } Bảng JSON · sao chép / dán</button>
+      <label class="field">Mức chi tiết<select id="briefLevel"><option value="standard">Chuẩn · 0,1 s, 21 khớp</option><option value="detailed" selected>Chi tiết · mỗi frame, 21 khớp + góc xoay</option><option value="max">Tối đa · 71 khớp + góc xoay + project gốc</option></select></label>
+      <button id="briefBtn" class="primary">Xuất ai-brief.json</button>
+      <p class="hint">Cảnh viết cho AI đọc: diễn viên, đạo cụ, từng nhịp (trúng / đỡ / né), tư thế then chốt, điểm chạm, camera và quỹ đạo từng khớp theo thời gian.</p>
+     </div>
+    </div>
     <div class="card"><h4>Dự án</h4>
      <div class="stack">
       <button id="restoreBackup" disabled>Khôi phục bản tự lưu</button>
@@ -347,6 +425,21 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   </div>
  </aside>
 </main>
+
+<dialog id="jsonDlg" aria-label="Bảng JSON">
+ <div class="dlghead"><h3>Bảng JSON · sao chép ra hoặc dán vào</h3><button id="jsonClose" class="icon" title="Đóng (Esc)">✕</button></div>
+ <div class="jsonbody">
+  <div class="jsonbar">
+   <button id="jsonFill" title="Đưa JSON của cảnh hiện tại vào ô">Lấy project hiện tại</button>
+   <button id="jsonFillBrief" title="Đưa ai-brief (theo mức ở tab Xuất) vào ô">Lấy ai-brief</button>
+   <button id="jsonCopy" class="primary" title="Sao chép nội dung ô vào clipboard">⧉ Sao chép</button>
+   <button id="jsonPaste" title="Dán từ clipboard vào ô">Dán từ clipboard</button>
+   <button id="jsonClear" class="quiet" title="Xoá trắng ô">Xoá trắng</button>
+  </div>
+  <textarea id="jsonText" spellcheck="false" autocomplete="off" placeholder="Dán JSON vào đây rồi bấm Nạp vào cảnh:&#10;• project.json → thay toàn bộ cảnh&#10;• danh sách lệnh AI, vd [{&quot;op&quot;:&quot;motion&quot;,&quot;actor&quot;:&quot;A&quot;,&quot;name&quot;:&quot;punch&quot;,&quot;at&quot;:1}] → áp thêm vào cảnh hiện tại"></textarea>
+  <div class="jsonbar"><p id="jsonInfo" class="hint"></p><span class="spacer"></span><button id="jsonCheck">Kiểm tra</button><button id="jsonApply" class="primary">Nạp vào cảnh</button></div>
+ </div>
+</dialog>
 
 <dialog id="helpDlg">
  <div class="dlghead"><h3>Phím tắt</h3><button id="helpClose" class="icon" title="Đóng (Esc)">✕</button></div>
@@ -380,10 +473,11 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   <div class="sc"><span>Di chuyển camera</span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <kbd>Q</kbd><kbd>E</kbd></span></div>
   <div class="sc"><span>Góc nhìn mặc định</span><span><kbd>H</kbd></span></div>
   <div class="sc"><span>Ghost / motion trail</span><span><kbd>G</kbd> <kbd>T</kbd></span></div>
+  <div class="sc"><span>Hiện / ẩn video tham chiếu</span><span><kbd>B</kbd></span></div>
   <div class="sc"><span>Bảng phím tắt</span><span><kbd>?</kbd></span></div>
  </div>
 </dialog>
 
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
-<script type="module" src="./engine.js?v=0.16"></script>
+<script type="module" src="./engine.js?v=0.20"></script>
 </html>

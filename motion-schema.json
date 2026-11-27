@@ -61,6 +61,14 @@
           "color": {
             "type": "string",
             "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "description": "Tên hiển thị cho người và AI (vd \"Kiếm sĩ áo đen\"). id vẫn là khoá dùng trong tracks."
+          },
+          "desc": {
+            "type": "string",
+            "description": "Mô tả hình dung cho AI tạo video: ngoại hình, trang phục, vũ khí, tính cách."
           }
         }
       }
